@@ -120,7 +120,7 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
       <a href="/feed.xml">RSS Feed</a>
       <a href="https://github.com/kryx-linux">GitHub</a>
     </div>
-    <p>KryX Linux &mdash; 0 bytes of JavaScript, self-hosted Atkinson Hyperlegible, built %s UTC.</p>
+    <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of JavaScript &middot; self-hosted Atkinson Hyperlegible &middot; built %s UTC.</p>
   </footer>
 </body>
 </html>

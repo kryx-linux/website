@@ -66,3 +66,8 @@ go run ./cmd/sitegen \
 1. Create a Cloudflare Pages project named `kryx-linux` and bind the custom domain `kryx.anrix.org`.
 2. Add repository secrets `CLOUDFLARE_API_TOKEN` (Pages Edit permission) and `CLOUDFLARE_ACCOUNT_ID`.
 3. Every push to `main` (and the daily `04:00 UTC` schedule) clones the latest `kryx-linux/ports` collections, fetches `index.json`, enforces the 0-byte JS check, and deploys `public/` to Cloudflare Pages.
+
+## License
+
+Licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0).
+Self-hosted `Atkinson Hyperlegible Next` fonts in `static/fonts/` are licensed under the SIL Open Font License 1.1.
