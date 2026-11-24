@@ -1,0 +1,95 @@
+name: Build and Deploy KryX Website (Cloudflare Pages)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Refresh package index & ports snapshot daily at 04:00 UTC
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout website repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Ensure self-hosted Atkinson Hyperlegible Next WOFF2 fonts
+        run: |
+          if [ ! -f static/fonts/atkinson-hyperlegible-next-latin-400-normal.woff2 ]; then
+            ./scripts/fetch-fonts.sh
+          fi
+
+      - name: Clone kryx-linux/ports collections for live /ports/ browser
+        run: |
+          mkdir -p _ports
+          for col in core opt xorg contrib; do
+            REPO_URL="https://github.com/kryx-linux/${col}.git"
+            BRANCH=""
+            for cand in 3.8 main 3.7; do
+              if git ls-remote --exit-code --heads "$REPO_URL" "$cand" >/dev/null 2>&1; then
+                BRANCH="$cand"
+                break
+              fi
+            done
+            if [ -n "$BRANCH" ]; then
+              git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "_ports/${col}" || true
+            else
+              git clone --depth 1 "$REPO_URL" "_ports/${col}" || true
+            fi
+          done
+          git clone --depth 1 https://github.com/kryx-linux/ports.git _ports_meta || true
+          if [ -d _ports_meta/rolling ]; then
+            cp -a _ports_meta/rolling _ports/rolling
+          fi
+          rm -rf _ports_meta
+
+      - name: Vet and test static site generator
+        run: |
+          CGO_ENABLED=0 go vet ./...
+          CGO_ENABLED=0 go test -v ./...
+
+      - name: Build static site into public/
+        run: |
+          CGO_ENABLED=0 go run ./cmd/sitegen \
+            -out public \
+            -site-url https://kryx.anrix.org \
+            -ports-dir _ports
+
+      - name: Enforce strict 0-byte JavaScript invariant
+        run: |
+          set -euo pipefail
+          JS_COUNT="$(find public -type f -name '*.js' | wc -l)"
+          if [ "$JS_COUNT" -ne 0 ]; then
+            echo "ERROR: found $JS_COUNT .js file(s) in public/" >&2
+            exit 1
+          fi
+          if grep -rni '<script' public/; then
+            echo "ERROR: found <script> tag in generated HTML" >&2
+            exit 1
+          fi
+          echo "Verified: 0 bytes of client-side JavaScript in public/"
+
+      - name: Deploy to Cloudflare Pages
+        if: github.event_name != 'pull_request' && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=kryx-linux --branch=main

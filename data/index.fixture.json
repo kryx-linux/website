@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "packages": {
+    "kpm": {
+      "latest": "0.5.3-1",
+      "versions": [
+        {
+          "pkgname": "kpm",
+          "pkgver": "0.5.3",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "kpm#0.5.3-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/kpm.0.5.3-1.pkg.tar.zst",
+          "sha256": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+          "size": 4120576,
+          "description": "KryX Package Manager — binary-first CRUX package manager with 100% pkgutils/ports parity",
+          "depends": ["glibc", "libarchive", "zstd"],
+          "makedepends": ["go"],
+          "collection": "rolling"
+        }
+      ]
+    },
+    "gports": {
+      "latest": "1.1.0-1",
+      "versions": [
+        {
+          "pkgname": "gports",
+          "pkgver": "1.1.0",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "gports#1.1.0-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/gports.1.1.0-1.pkg.tar.zst",
+          "sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+          "size": 5242880,
+          "description": "Standalone, zero-dependency, pure-Go CRUX Linux ports utility (git, rsync, httpup, tarball)",
+          "depends": ["ca-certificates"],
+          "makedepends": ["go"],
+          "collection": "rolling"
+        }
+      ]
+    },
+    "kernel": {
+      "latest": "6.18.64-1",
+      "versions": [
+        {
+          "pkgname": "kernel",
+          "pkgver": "6.18.64",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "kernel#6.18.64-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/kernel.6.18.64-1.pkg.tar.zst",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 68157440,
+          "description": "KryX Linux rolling LTS kernel with modern Wayland/DRM and NVMe defaults",
+          "depends": ["kmod"],
+          "makedepends": ["bc", "bison", "flex", "openssl", "elfutils"],
+          "collection": "rolling"
+        }
+      ]
+    },
+    "limine": {
+      "latest": "9.2.0-1",
+      "versions": [
+        {
+          "pkgname": "limine",
+          "pkgver": "9.2.0",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "limine#9.2.0-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/limine.9.2.0-1.pkg.tar.zst",
+          "sha256": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+          "size": 786432,
+          "description": "Modern, portable, multiprotocol UEFI/BIOS bootloader",
+          "depends": [],
+          "makedepends": ["nasm", "llvm"],
+          "collection": "rolling"
+        }
+      ]
+    },
+    "wlroots": {
+      "latest": "0.18.2-1",
+      "versions": [
+        {
+          "pkgname": "wlroots",
+          "pkgver": "0.18.2",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "wlroots#0.18.2-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/wlroots.0.18.2-1.pkg.tar.zst",
+          "sha256": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+          "size": 1245184,
+          "description": "Modular Wayland compositor library",
+          "depends": ["libdrm", "libinput", "mesa", "pixman", "wayland", "xkbcommon"],
+          "makedepends": ["meson", "ninja", "wayland-protocols"],
+          "collection": "opt"
+        }
+      ]
+    },
+    "zig": {
+      "latest": "0.14.0-1",
+      "versions": [
+        {
+          "pkgname": "zig",
+          "pkgver": "0.14.0",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "zig#0.14.0-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/zig.0.14.0-1.pkg.tar.zst",
+          "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+          "size": 46137344,
+          "description": "General-purpose systems programming language and toolchain",
+          "depends": ["glibc"],
+          "makedepends": ["cmake", "ninja", "llvm"],
+          "collection": "rolling"
+        }
+      ]
+    },
+    "zlib": {
+      "latest": "1.3.1-1",
+      "versions": [
+        {
+          "pkgname": "zlib",
+          "pkgver": "1.3.1",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "zlib#1.3.1-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/zlib.1.3.1-1.pkg.tar.zst",
+          "sha256": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+          "size": 104857,
+          "description": "Compression library implementing the deflate compression method",
+          "depends": ["glibc"],
+          "collection": "core"
+        }
+      ]
+    }
+  }
+}

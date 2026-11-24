@@ -1,0 +1,143 @@
+.TH KRYX\-SRC 8 "November 2026" "kryx-linux" "System Administration"
+.SH NAME
+kryx\-src \- unified CRUX/KryX source build, linting, and release\-staging machine
+.SH SYNOPSIS
+.B kryx\-src
+.I command
+.RI [ options ]
+.RI [ args ...\& ]
+.SH DESCRIPTION
+.B kryx\-src
+is a standalone static Go source\-building and release\-staging companion to
+.BR kpm (8),
+inspired by Void Linux's
+.BR xbps\-src .
+It shares
+.BR kpm 's
+internal Pkgfile parser, builder, package database, and repository indexer while
+adding a canonical port registry that resolves ports uniformly by directory path,
+basename, declared
+.B Pkgfile
+.BR name= ,
+or collection prefix, across both multi\-collection trees and single\-port repositories.
+.SH PORTS DIRECTORY RESOLUTION
+.B kryx\-src
+never hardcodes or blindly requires
+.I /usr/ports
+(making it safe for containerized/Docker CI builds).
+The ports tree path is resolved in strict priority order:
+.IP 1. 4
+Explicit CLI flag:
+.B \-\-ports\-dir \fIpath\fR
+(or
+.BR \-P " \fIpath\fR,"
+or
+.BR \-\-ports " \fIpath\fR)"
+.IP 2. 4
+Environment variable:
+.B $KRYX_PORTS_DIR
+or
+.B $KPM_PORTS_DIR
+.IP 3. 4
+Active configuration file
+.RB ( [paths] " ports_dir"
+in
+.IR kpm.ini )
+when the directory exists on disk
+.IP 4. 4
+Workspace auto\-detection in the current working directory:
+.IR ./Pkgfile ,
+.IR ./.kryx/Pkgfile ,
+.IR ./ports ,
+or collection directories
+.RI ( ./core ,
+.IR ./opt ,
+.IR ./xorg ,
+.IR ./contrib ,
+.IR ./rolling )
+.IP 5. 4
+Fallback to
+.I /usr/ports
+only if the directory exists on disk; otherwise
+.B kryx\-src
+exits with an actionable error.
+.PP
+The resolved path is exported as
+.B KRYX_PORTS_DIR
+and
+.B KPM_PORTS_DIR
+to child build processes.
+.SH COMMANDS
+.TP
+.B pkg \fR[\fIoptions\fR] \fItarget\fR ... \fR(alias: \fBbuild\fR)
+Expand
+.I target
+arguments (port path, basename, package name, collection name, or
+.BR all ),
+optionally resolve recursive runtime and make dependencies in topological order
+.RB ( \-\-deps ),
+satisfy uninstalled dependencies binary\-first from
+.I index.json
+(or from source with
+.BR \-\-source\-deps ),
+and compile target archives into
+.IR \-\-out\-dir .
+.TP
+.B plan \fR[\fB\-\-ports\-dir \fIdir\fR] [\fB\-\-max\-ports \fIn\fR] [\fB\-\-chunk\-size \fIn\fR] [\fB\-\-compact\fR] \fItarget\fR ...
+Generate a bounded topological GitHub Actions matrix JSON plan.
+.TP
+.B lint \fR[\fB\-\-ports\-dir \fIdir\fR] [\fB\-\-strict\fR] [\fItarget\fR ...] \fR(alias: \fBcheck\fR)
+Validate
+.B Pkgfile
+recipes across a ports tree, detecting missing required fields, directory\-vs\-name
+mismatches, duplicate package names within a collection, missing dependency targets,
+and dependency cycles.
+.TP
+.B list \fR[\fB\-\-ports\-dir \fIdir\fR] [\fB\-\-json\fR] [\fItarget\fR ...] \fR(alias: \fBls\fR)
+List discovered ports with their relative directory path, package name (when it
+differs from the directory basename), and full version.
+.TP
+.B stage \fR[\fIoptions\fR] \fR(alias: \fBindex\fR)
+Scan
+.I \-\-packages
+for CRUX
+.I .pkg.tar.<ext>
+archives, enrich metadata from
+.IR \-\-ports\-dir ,
+merge into
+.IR \-\-index ,
+and optionally copy archives into
+.I \-\-upload\-dir
+with GitHub\-Releases\-safe filenames
+.RB ( #
+replaced by
+.BR . ).
+.TP
+.B sign \-\-key \fIprivkey\fR \fR[\fB\-\-signify\fR] [\fB\-\-file \fIindex.json\fR] [\fB\-\-out \fIindex.json.sig\fR]
+Generate a detached Ed25519 or OpenBSD
+.BR signify (1)\-compatible
+signature for
+.IR index.json .
+.TP
+.B rewrite\-urls \-\-index \fIpath\fR \-\-assets\-json \fIfile\fR \fR[\fB\-\-packages \fIdir\fR]
+Update download URLs in
+.I index.json
+using the JSON payload returned by
+.B gh release view \-\-json assets
+and verify that every built archive resolves to an uploaded asset URL.
+.SH EXAMPLES
+.RS
+.PP
+.nf
+kryx\-src lint \-\-ports\-dir /workspace/ports
+kryx\-src plan \-\-ports\-dir /workspace/ports \-\-compact rolling/kpm
+kryx\-src pkg \-\-ports\-dir ./ports \-\-work\-root /tmp/work \-\-out\-dir ./dist/packages \-\-deps \-\-force linux\-6.18
+kryx\-src stage \-\-packages ./dist/packages \-\-ports\-dir ./ports \-\-index ./stage/index.json \-\-upload\-dir ./stage/upload
+kryx\-src sign \-\-signify \-\-key ./release.sec \-\-file ./stage/index.json
+kryx\-src rewrite\-urls \-\-index ./stage/index.json \-\-assets\-json ./stage/assets.json \-\-packages ./dist/packages
+.fi
+.RE
+.SH SEE ALSO
+.BR kpm (8),
+.BR kpm\-index (8),
+.BR gports (8)

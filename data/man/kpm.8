@@ -1,0 +1,1589 @@
+.TH KPM 8 "November 2026" "kryx-linux" "System Administration"
+.SH NAME
+kpm, kpm\-index \- CRUX Linux binary\-first package manager and repository indexer
+.SH SYNOPSIS
+.B kpm
+.RI [ "global options" ]
+.I command
+.RI [ options ]
+.RI [ args ...\& ]
+.PP
+.B kpm\-index
+.RB [ \-\-index
+.IR path ]
+.RB [ \-\-packages
+.IR dir ]
+.RB [ \-\-ports
+.IR dir ]
+.RB [ \-\-base\-url
+.IR url ]
+.RB [ \-\-arch
+.IR arch ]
+.RB [ \-\-prune ]
+.SH DESCRIPTION
+.B kpm
+is a standalone Go package manager for standard CRUX Linux installations.
+It consolidates binary package synchronization, installation, upgrades,
+.B Pkgfile
+source builds, search, querying, and package removal under a single
+command\-line interface while remaining directly compatible with CRUX
+.BR pkgutils .
+.PP
+.B kpm
+operates directly on the standard CRUX package database
+.RI ( /var/lib/pkg/db ),
+honors directory\-level
+.BR flock (2)
+locking on
+.IR /var/lib/pkg ,
+commits database updates atomically using
+.I .incomplete_transaction
+and
+.I .backup
+files, evaluates
+.IR /etc/pkgadd.conf
+rules (including
+.IR /var/lib/pkg/rejected/
+handling), and invokes
+.B /sbin/ldconfig
+when
+.I /etc/ld.so.conf
+is present.
+It introduces no conflicting binaries, database formats, or directory
+layouts against stock
+.BR pkgmk (8),
+.BR pkgadd (8),
+.BR pkgrm (8),
+or
+.BR pkginfo (8).
+.PP
+Package installation and system updates are strictly binary\-first against
+the remote JSON repository index
+.RI ( index.json ),
+defaulting to the
+.B kryx-linux/ports
+release tag
+.BR rolling\-x86_64 .
+If no prebuilt binary exists in
+.I index.json
+for a requested package,
+.B kpm install
+and
+.B kpm update
+never trigger an automatic source build; instead, they report that no binary
+is available and instruct the user to run
+.BR "kpm build" .
+.PP
+Local CRUX ports trees (defaulting to
+.IR /usr/ports )
+are kept in place and parsed directly.
+Build settings such as parallel jobs, compiler flags, source cache paths,
+and archive compression are configured manually in
+.IR /etc/kpm.ini .
+.PP
+.B kpm\-index
+is the companion repository indexer used (typically in CI/release workflows)
+to scan CRUX
+.I <name>#<version>\-<release>.pkg.tar.<ext>
+archives, compute SHA\-256 digests and sizes, optionally enrich entries
+from a CRUX ports tree, and generate or update
+.IR index.json .
+.SH COMMANDS
+All commands accept global options
+.RB ( \-c /\-\-config ,
+.BR \-r /\-\-root ,
+.BR \-\-color ,
+.BR \-\-no\-color )
+before the subcommand name.
+Each subcommand has short aliases for quick typing:
+.B sy
+.RB ( sync ),
+.B up
+.RB ( update ),
+.BR in / i
+.RB ( install ),
+.BR bld / b
+.RB ( build ),
+.BR se / s
+.RB ( search ),
+.BR ls / l
+.RB ( list ),
+.BR rm / r / uninstall
+.RB ( remove ),
+and
+.B h
+.RB ( help ).
+.TP
+.B sync \fR[\fB\-\-ports\fR] [\fIcollection\fR ...]
+Download the remote
+.I index.json
+from
+.B [repo] index_url
+and atomically save it to
+.IR <cache_dir>/index.json .
+When
+.B \-\-ports
+is supplied, also synchronize local CRUX ports collections by executing
+matching drivers in
+.I ports_drivers_dir
+(default
+.IR /etc/ports/drivers )
+against collection configuration files in
+.I ports_conf_dir
+(default
+.IR /etc/ports ),
+with
+.B PORTS_DIR
+exported to the driver environment.
+Optional
+.I collection
+arguments restrict port synchronization to those named collections.
+.TP
+.B update \fR[\fB\-f\fR|\fB\-\-force\fR] [\fB\-\-no\-sync\fR] [\fB\-\-dry\-run\fR] [\fIpackage\fR ...]
+Upgrade installed packages binary\-first.
+Unless
+.B \-\-no\-sync
+is specified,
+.I index.json
+is synchronized first.
+Installed packages (or only the named
+.I package
+arguments) are compared against the latest matching entries in
+.IR index.json ;
+packages whose installed version differs are downloaded, SHA\-256 verified,
+and upgraded using CRUX
+.BR pkgadd (8)
+upgrade rules.
+If an installed package has no binary in
+.I index.json
+but has a different version in the local ports tree,
+.B kpm
+prints a notice instructing the user to run
+.B kpm build \fIpackage\fR
+without compiling it automatically.
+.TP
+.B install \fR[\fB\-u\fR|\fB\-\-upgrade\fR] [\fB\-f\fR|\fB\-\-force\fR] [\fB\-\-deps\fR] \fIpackage\fR|\fIfile\fR ...
+Install one or more packages strictly binary\-first.
+Arguments that match the CRUX archive naming pattern
+.I <name>#<version>\-<release>.pkg.tar.<ext>
+and exist on disk are installed directly as local package files.
+All other arguments are resolved against the locally synced
+.IR index.json .
+Before modifying the system,
+.B kpm
+verifies that every requested package (and any missing dependencies when
+.B \-\-deps
+is enabled) is present in
+.I index.json
+for the configured architecture.
+If any binary is absent,
+.B kpm
+prints
+.I no binary available for <pkg> ...; run: kpm build <pkg>
+and exits with status 1 without building.
+Available binaries are cached in
+.IR <cache_dir>/bin/ ,
+verified against their SHA\-256 digest, and installed with CRUX
+.BR pkgadd (8)
+conflict, rule, rollback, and
+.B ldconfig
+semantics.
+.TP
+.B build \fR[\fIoptions\fR] \fIport\fR ...
+Locate each named
+.I port
+(either
+.I name
+or
+.IR collection/name )
+in place under
+.I ports_dir
+and compile it from its
+.B Pkgfile
+using the
+.B [build]
+and
+.B [paths]
+settings from
+.IR kpm.ini .
+Missing remote sources are downloaded into
+.IR source_cache ,
+verified against
+.I .signature
+and/or
+.IR .md5sum ,
+unpacked into
+.IR <work_dir>/<name>/src ,
+built via
+.B bash
+into
+.IR <work_dir>/<name>/pkg ,
+optionally stripped and manpage\-compressed, archived via
+.B bsdtar \-\-format=gnutar
+into
+.I package_dir
+as
+.IR <name>#<version>\-<release>.pkg.tar.<compression> ,
+and verified against
+.IR .footprint .
+If the target archive is already newer than the
+.B Pkgfile
+and all source files, the build is skipped as up to date unless
+.B \-\-force
+or
+.B \-\-update\-footprint
+is given.
+.TP
+.B search \fR[\fB\-\-installed\fR] [\fB\-\-ports\fR] [\fB\-\-binaries\fR] \fIquery\fR ...
+Perform a case\-insensitive substring search on package names and
+descriptions across the synced binary index, local ports tree, and
+installed package database.
+Multiple query tokens are joined with spaces.
+Output is compact single\-line short form sorted alphabetically:
+.RS
+.PP
+.nf
+<name> <version> [<status>] \- <description>
+.fi
+.PP
+where
+.I <status>
+is a comma\-separated combination of
+.BR installed ,
+.BR bin ,
+and
+.BR port .
+.RE
+.TP
+.B list \fR[\fB\-\-ports\fR | \fB\-\-binaries\fR | \fB\-\-files \fItarget\fR | \fB\-\-owner \fIregex\fR | \fB\-\-diff\fR] [\fIcollection\fR ...]
+Query installed packages, local ports, or binary index entries.
+At most one mode flag may be supplied:
+.RS
+.TP
+.I "(default, no flag)"
+List installed packages from
+.I <root>/var/lib/pkg/db
+as
+.I "<name> <version>"
+(equivalent to
+.BR "pkginfo \-i" ).
+.TP
+.B \-\-ports \fR[\fIcollection\fR ...]
+List available ports under
+.I ports_dir
+as
+.I <collection>/<port>
+(equivalent to
+.BR "ports \-l" ).
+Positional
+.I collection
+arguments override
+.B [paths] collections
+for this invocation.
+.TP
+.B \-\-binaries
+List available binary packages from synced
+.I index.json
+as
+.IR "<pkgname> <latest>" .
+.TP
+.B \-\-files \fIpackage\fR|\fIarchive\fR
+List files owned by an installed package or contained in a local CRUX
+archive file (equivalent to
+.BR "pkginfo \-l" ).
+.TP
+.B \-\-owner \fIregex\fR
+Search all installed package file paths (prefixed with
+.BR / )
+against regular expression
+.I regex
+and print a
+.I "Package  File"
+table (equivalent to
+.BR "pkginfo \-o" ).
+.TP
+.B \-\-diff
+Display version differences between installed packages and available
+binaries (or local ports when no binary is indexed) as a
+.I "Source  Name  Available  Installed"
+table.
+.RE
+.TP
+.B remove \fIpackage\fR ...
+.TQ
+.B uninstall \fIpackage\fR ...
+.TQ
+.B rm \fIpackage\fR ...
+Remove one or more installed packages using CRUX
+.BR pkgrm (8)
+policy.
+Requires root privileges, acquires an exclusive lock on
+.IR <root>/var/lib/pkg ,
+preserves files still referenced by any other installed package, removes
+remaining files and empty directories in reverse lexicographical order,
+runs
+.B /sbin/ldconfig \-r \fI<root>\fR
+if
+.I <root>/etc/ld.so.conf
+exists, and commits the updated database atomically.
+.TP
+.B help
+Print usage summary and exit 0.
+.TP
+.B version
+Print the
+.B kpm
+version string and exit 0.
+.SH KPM\-INDEX
+.B kpm\-index
+builds or updates the JSON binary repository index consumed by
+.B kpm sync
+and
+.BR "kpm install" .
+It scans
+.I \-\-packages
+for all CRUX archives matching
+.I "*.pkg.tar.{gz,bz2,xz,lz,zst}"
+whose filenames follow
+.IR "<name>#<version>\-<release>.pkg.tar.<ext>" .
+Unrecognized archive names produce a warning on standard error and are skipped.
+.PP
+For each valid archive,
+.B kpm\-index
+computes its SHA\-256 checksum and byte size, constructs its download URL
+from
+.I \-\-base\-url
+using URL path escaping (encoding
+.B #
+as
+.B %23
+so archive URLs are never truncated as URL fragments), optionally enriches
+.BR description ,
+.BR depends ,
+and
+.B collection
+from
+.IR \-\-ports ,
+merges the entry into any existing
+.IR index.json ,
+sorts versions ascending using numeric\-aware segment comparison, updates
+each package's
+.B latest
+pointer, and writes the resulting JSON atomically.
+.SS Index JSON Schema
+.RS
+.nf
+{
+  "schema_version": 1,
+  "packages": {
+    "zlib": {
+      "latest": "1.3.1\-1",
+      "versions": [
+        {
+          "pkgname": "zlib",
+          "pkgver": "1.3.1",
+          "pkgrel": "1",
+          "arch": "x86_64",
+          "filename": "zlib#1.3.1\-1.pkg.tar.zst",
+          "url": "https://github.com/kryx-linux/ports/releases/download/rolling\-x86_64/zlib%231.3.1\-1.pkg.tar.zst",
+          "sha256": "<hex\-sha256>",
+          "size": 123456,
+          "description": "Compression library",
+          "depends": ["glibc"],
+          "collection": "core"
+        }
+      ]
+    }
+  }
+}
+.fi
+.RE
+.PP
+The fields
+.BR description ,
+.BR depends ,
+and
+.B collection
+are omitted when empty.
+.SH OPTIONS
+.SS Global Options (kpm)
+Global options must precede the subcommand name.
+.TP
+.BR \-c ", " \-\-config " \fIfile\fR"
+Use
+.I file
+as the INI configuration file instead of
+.I $KPM_CONFIG
+or
+.IR /etc/kpm.ini .
+When specified explicitly, a missing file causes an error.
+.TP
+.BR \-r ", " \-\-root " \fIpath\fR"
+Override
+.B [paths] root
+to operate on an alternative CRUX installation root (e.g., a mounted
+chroot or staging root).
+.TP
+.BR \-\-color " \fImode\fR"
+Control ANSI color output:
+.B auto
+(enable on interactive terminals unless
+.B NO_COLOR
+is set or
+.BR TERM=dumb ),
+.BR always ,
+or
+.B never
+(default:
+.B [ui] color
+or
+.BR auto ).
+.TP
+.B \-\-no\-color
+Disable ANSI color output (equivalent to
+.BR \-\-color=never ).
+.TP
+.BR \-v ", " \-\-version
+Print version information and exit 0.
+.TP
+.BR \-h ", " \-\-help
+Print usage summary and exit 0.
+.SS sync Options
+.TP
+.BR \-p ", " \-\-ports
+In addition to downloading
+.IR index.json ,
+run CRUX port collection sync drivers in
+.IR ports_drivers_dir .
+.SS update Options
+.TP
+.BR \-f ", " \-\-force
+Overwrite conflicting files during binary upgrades (still honoring
+.B UPGRADE ... NO
+rules from
+.IR pkgadd.conf ).
+.TP
+.BR \-n ", " \-\-no\-sync
+Use the already cached
+.I index.json
+without fetching the remote index first.
+.TP
+.BR \-d ", " \-\-dry\-run
+Print available binary upgrades without downloading or modifying the system.
+.TP
+.BR \-v ", " \-\-verbose
+List all conflicting files without truncation on conflict errors.
+.SS install Options
+.TP
+.BR \-u ", " \-\-upgrade
+Upgrade an already installed package.
+Required if the package is already present in
+.IR /var/lib/pkg/db
+(unless
+.B \-\-reinstall
+is used); rejected if the package is not yet installed.
+.TP
+.BR \-R ", " \-\-reins ", " \-\-reinstall
+Reinstall package(s) even if already installed (upgrades in place when
+present, or performs a fresh install if absent).
+.TP
+.BR \-f ", " \-\-force
+Remove and overwrite conflicting files owned by other packages or already
+present on disk.
+.TP
+.BR \-d ", " \-\-deps
+Recursively resolve dependencies (from
+.I index.json
+.B depends
+or local
+.B Pkgfile
+headers), skip dependencies already installed, and install missing
+dependencies first from
+.IR index.json .
+.TP
+.BR \-v ", " \-\-verbose
+List every conflicting file path on conflict errors instead of truncating
+output after the first 20 files.
+.PP
+Subcommand options may appear either before or after positional arguments
+(for example,
+.B kpm install zig \-\-force
+and
+.B kpm install \-\-force zig
+are equivalent); pass
+.B \-\-
+to end option parsing.
+.SS build Options
+.TP
+.BR \-i ", " \-\-install
+Install each built target package after building (automatically upgrades
+if the package is already installed in the database).
+.TP
+.BR \-u ", " \-\-upgrade
+Upgrade each built target package after building (requires the package to
+be previously installed).
+.TP
+.BR \-R ", " \-\-reins ", " \-\-reinstall
+Force rebuilding the target port(s) and reinstall them into
+.I root
+whether previously installed or not.
+.TP
+.BR \-f ", " \-\-force
+Force rebuilding target ports even if the target archive is up to date,
+and pass
+.B \-\-force
+when installing.
+.TP
+.BR \-d ", " \-\-deps
+Resolve recursive
+.B Pkgfile
+runtime
+.RB ( "# Depends on:" )
+and build\-only
+.RB ( "# Make depends on:" )
+dependencies in topological order.
+Already\-installed dependencies are skipped.
+Uninstalled dependencies are installed into
+.I root
+before building downstream ports (using prebuilt binaries from synced
+.I index.json
+when available unless
+.B \-\-source\-deps
+is set, in which case only their runtime dependencies are needed; otherwise
+building them from
+.I ports_dir
+and installing the resulting archive).
+Binary\-only dependencies present in
+.I index.json
+are supported even when absent from the local ports tree.
+Requested target ports are always built from source and only installed
+when
+.BR \-i / \-\-install ,
+.BR \-u / \-\-upgrade ,
+or
+.BR \-R / \-\-reinstall
+is passed.
+.TP
+.B \-\-sync
+With
+.BR \-d / \-\-deps ,
+synchronize the remote binary
+.I index.json
+before resolving binary dependencies.
+.TP
+.BR \-S ", " \-\-source\-deps
+With
+.BR \-d / \-\-deps ,
+always build missing dependencies from
+.I ports_dir
+instead of reusing prebuilt binaries from
+.IR index.json .
+.TP
+.BR \-if ", " \-\-ignore\-footprint
+Skip
+.I .footprint
+verification after creating the archive.
+.TP
+.BR \-in ", " \-\-ignore\-new
+Allow
+.B NEW
+files during
+.I .footprint
+verification while still failing on
+.B MISSING
+files.
+.TP
+.BR \-uf ", " \-\-update\-footprint
+Regenerate and overwrite
+.I .footprint
+in the port directory from the built archive.
+.TP
+.BR \-im ", " \-\-ignore\-md5sum
+Skip
+.I .md5sum
+verification of source files.
+.TP
+.BR \-is ", " \-\-ignore\-signature
+Skip
+.I .signature
+cryptographic verification.
+.TP
+.BR \-kw ", " \-\-keep\-work
+Keep
+.I <work_dir>/<name>
+after the build completes or fails.
+.TP
+.BR \-ns ", " \-\-no\-strip
+Disable ELF binary, shared library, and archive stripping.
+.TP
+.BR \-v ", " \-\-verbose
+List all conflicting files without truncation when installing packages.
+.SS search Options
+.TP
+.BR \-i ", " \-\-installed
+Search only packages installed in
+.IR <root>/var/lib/pkg/db .
+.TP
+.BR \-p ", " \-\-ports
+Search only ports in
+.IR ports_dir .
+.TP
+.BR \-b ", " \-\-binaries
+Search only packages in synced
+.IR index.json .
+.SS list Options
+.TP
+.BR \-p ", " \-\-ports
+List ports under
+.I ports_dir
+in
+.I <collection>/<port>
+format.
+.TP
+.BR \-b ", " \-\-binaries
+List available binary packages from synced
+.IR index.json .
+.TP
+.BR \-f ", " \-\-files " \fIpackage\fR|\fIarchive\fR"
+List files belonging to an installed package or a local archive file.
+.TP
+.BR \-o ", " \-\-owner " \fIregex\fR"
+List installed packages owning files matching regular expression
+.IR regex .
+.TP
+.BR \-d ", " \-\-diff
+List version differences between installed packages and binary/port sources.
+.SS kpm\-index Options
+.TP
+.B \-\-index \fIpath\fR
+Path to the JSON index file to create or update (default:
+.IR index.json ).
+.TP
+.B \-\-packages \fIdir\fR
+Directory containing CRUX
+.I .pkg.tar.<ext>
+archives to index (default:
+.IR . ).
+.TP
+.B \-\-ports\-dir \fIdir\fR, \-\-ports \fIdir\fR
+Optional CRUX ports directory used to populate
+.BR description ,
+.BR depends ,
+.BR makedepends ,
+and
+.B collection
+fields on indexed entries (default:
+.I $KRYX_PORTS_DIR
+or
+.IR $KPM_PORTS_DIR ).
+.TP
+.B \-\-base\-url \fIurl\fR
+Optional
+.B http://
+or
+.B https://
+base URL prepended to percent\-encoded archive filenames (default: empty,
+storing bare filenames in
+.BR url ).
+.TP
+.B \-\-arch \fIarch\fR
+Target architecture string recorded in entries (default:
+.B x86_64
+on amd64 hosts, otherwise the Go architecture name).
+.TP
+.B \-\-prune
+Remove existing index entries whose archive filename is no longer present in
+.I \-\-packages
+(default:
+.BR false ).
+.TP
+.B \-\-sign\-key \fIprivkey\fR
+Generate an OpenBSD
+.BR signify (1)\-compatible
+detached signature
+.RI ( <index>.sig )
+using a signify
+.I .sec
+or
+.B kryx\-ed25519
+private key.
+.SH CONFIGURATION
+.B kpm
+reads a manual INI configuration file (default
+.IR /etc/kpm.ini ).
+If no explicit config file is requested via
+.B \-\-config
+or
+.B KPM_CONFIG
+and
+.I /etc/kpm.ini
+does not exist, built\-in defaults are used.
+Lines beginning with
+.B #
+or
+.B ;
+are comments; inline comments preceded by whitespace are also stripped.
+Values may be enclosed in single or double quotes.
+Boolean keys accept
+.BR true / yes / 1 / on
+and
+.BR false / no / 0 / off .
+List keys accept comma\- or whitespace\-separated items.
+.SS [paths]
+Keys in
+.B [paths]
+are also accepted before any section header.
+.TP
+.B root
+CRUX installation root directory (default:
+.IR / ).
+.TP
+.B ports_dir
+Local CRUX ports tree path, used in place (default:
+.IR /usr/ports ).
+.TP
+.B collections
+Priority\-ordered list of port collections under
+.I ports_dir
+(default:
+.BR "core, opt, xorg, contrib" ).
+Leave empty to auto\-discover all collections.
+.TP
+.B cache_dir
+Base cache directory for
+.I index.json
+and downloaded binaries under
+.I bin/
+(default:
+.IR /var/cache/kpm ).
+.TP
+.B source_cache \fR(alias: \fBsource_dir\fR)
+Cache directory for downloaded upstream source files used by
+.B kpm build
+(default:
+.IR /var/cache/kpm/sources ).
+.TP
+.B package_dir
+Output directory where
+.B kpm build
+writes compiled
+.I .pkg.tar.<ext>
+archives (default:
+.IR /var/cache/kpm/packages ).
+.TP
+.B work_dir
+Temporary build work directory containing
+.I <name>/src
+and
+.I <name>/pkg
+(default:
+.IR /var/cache/kpm/work ).
+.TP
+.B pkgadd_conf
+Path to CRUX
+.BR pkgadd.conf (8)
+rule file (default:
+.IR /etc/pkgadd.conf ).
+If absent, the implicit default rule installs and upgrades all files.
+.TP
+.B ports_conf_dir
+Directory containing CRUX port collection config files for
+.B kpm sync \-\-ports
+(default:
+.IR /etc/ports ).
+.TP
+.B ports_drivers_dir
+Directory containing executable CRUX port sync drivers (default:
+.IR /etc/ports/drivers ).
+.SS [repo]
+.TP
+.B repository
+GitHub repository slug hosting binary releases (default:
+.BR kryx-linux/ports ).
+.TP
+.B tag
+Release tag containing
+.I index.json
+and binary assets (default:
+.BR rolling\-x86_64 ).
+.TP
+.B arch
+Target architecture selected from
+.I index.json
+(default:
+.BR x86_64 ;
+entries with
+.B arch
+empty or
+.B any
+also match).
+.TP
+.B index_url
+Full
+.B http://
+or
+.B https://
+URL to
+.IR index.json .
+If omitted while
+.B repository
+and
+.B tag
+are set, it is derived automatically from those values.
+Default:
+.RS
+.nf
+https://github.com/kryx-linux/ports/releases/download/rolling\-x86_64/index.json
+.fi
+.RE
+.TP
+.B timeout_seconds
+HTTP timeout in seconds for syncing
+.I index.json
+and downloading binaries or sources (default:
+.BR 120 ,
+minimum
+.BR 1 ).
+.SS [build]
+.TP
+.B jobs
+Parallel build jobs exported as
+.B JOBS
+(default: host CPU count;
+.I kpm.ini.example
+sets
+.BR 4 ).
+.TP
+.B cflags
+C compiler flags exported as
+.B CFLAGS
+(default:
+.BR "\-O2 \-march=x86\-64 \-pipe" ).
+.TP
+.B cxxflags
+C++ compiler flags exported as
+.B CXXFLAGS
+(defaults to the value of
+.B cflags
+if unset).
+.TP
+.B ldflags
+Linker flags exported as
+.B LDFLAGS
+when non\-empty (default: empty).
+.TP
+.B makeflags
+Flags exported as
+.B MAKEFLAGS
+(defaults to
+.BI \-j <jobs>
+if unset).
+.TP
+.B compression
+Archive compression mode for
+.B kpm build
+(default:
+.BR zst ).
+Supported values are
+.BR gz ,
+.BR bz2 ,
+.BR xz ,
+.BR lz ,
+and
+.BR zst .
+.TP
+.B source_mirrors
+Optional space\- or comma\-separated mirror base URLs tried before upstream
+source URLs (default: empty).
+.TP
+.B download_sources
+Download missing remote sources into
+.I source_cache
+(default:
+.BR true ).
+.TP
+.B strip
+Strip unstripped ELF executables, shared objects, and static archives in
+.I $PKG
+while honoring
+.I .nostrip
+(default:
+.BR true ).
+.TP
+.B compress_manpages
+Compress man pages under
+.I */man/man*/*
+with
+.B gzip \-9
+and update man page symlinks (default:
+.BR true ).
+.TP
+.B ignore_footprint
+Skip
+.I .footprint
+verification (default:
+.BR false ).
+.TP
+.B ignore_new
+Permit
+.B NEW
+files during
+.I .footprint
+verification (default:
+.BR false ).
+.TP
+.B ignore_md5sum
+Skip
+.I .md5sum
+verification (default:
+.BR false ).
+.TP
+.B ignore_signature
+Skip
+.I .signature
+verification via
+.B signify
+(default:
+.BR true ).
+.TP
+.B keep_work
+Preserve
+.I <work_dir>/<name>
+after builds (default:
+.BR false ).
+.TP
+.B download_prog
+Fallback downloader program for non\-HTTP(S) schemes such as
+.B ftp://
+.RB ( curl
+or
+.BR wget ;
+default:
+.BR curl ).
+.TP
+.B curl_opts\fR, \fBwget_opts
+Extra options appended when invoking
+.B curl
+or
+.B wget
+(default: empty).
+.SS [ui]
+.TP
+.B color
+Default ANSI color mode:
+.BR auto ,
+.BR always ,
+or
+.B never
+(default:
+.BR auto ).
+.SS pkgadd.conf Rules
+.B kpm
+parses
+.I /etc/pkgadd.conf
+(or the path configured in
+.BR "[paths] pkgadd_conf" )
+using the exact three\-column CRUX format:
+.RS
+.PP
+.nf
+<EVENT> <REGEX> <YES|NO>
+.fi
+.RE
+.PP
+where
+.I EVENT
+is
+.B INSTALL
+or
+.B UPGRADE
+and the last matching rule takes precedence.
+Files excluded by
+.B INSTALL ... NO
+are omitted from both extraction and the package database.
+Existing files matched by
+.B UPGRADE ... NO
+are preserved on disk and the incoming version is extracted under
+.IR <root>/var/lib/pkg/rejected/ ;
+if the rejected file has identical permissions and identical or empty
+contents, it is automatically pruned from
+.IR rejected/ .
+.SH PKGFILE FORMAT
+.B kpm build
+and
+.B kpm search
+parse standard CRUX
+.B Pkgfile
+recipes directly from the local ports tree.
+.SS Header Comments
+Leading
+.B #
+comment lines are parsed for metadata:
+.TP
+.B # Description: \fItext\fR
+Short one\-line package summary used by
+.B kpm search
+and
+.BR "kpm\-index \-\-ports" .
+.TP
+.B # URL: \fIurl\fR
+Upstream project homepage.
+.TP
+.B # Maintainer: \fIcontact\fR
+Port maintainer information.
+.TP
+.B # Packager: \fIcontact\fR
+Original packager information.
+.TP
+.B # Depends on: \fIpkg1 pkg2\fR ... \fR(also accepts \fB# Depends:\fR)
+Space\- or comma\-separated list of runtime dependencies used by
+.BR "kpm build \-\-deps" ,
+.BR "kpm install \-\-deps" ,
+and
+.BR "kpm\-index \-\-ports" .
+.TP
+.B # Make depends on: \fIpkg1 pkg2\fR ... \fR(also accepts \fB# Make depends:\fR, \fB# Makedepends:\fR, \fB# Build depends on:\fR)
+Optional, fully backward\-compatible header listing build\-time\-only dependencies
+(such as compilers or code generators).
+Satisfied during
+.B kpm build \-\-deps
+and
+.B kryx\-src pkg \-\-deps
+(binary\-first from
+.I index.json
+when available, otherwise built from source), and recorded separately from runtime
+.B depends
+so
+.B kpm install \-\-deps
+does not pull build\-only tools onto end\-user systems.
+Ports omitting this header continue to work identically to stock CRUX.
+.SS Required and Optional Shell Definitions
+.B Pkgfile
+recipes are evaluated in
+.B bash
+with
+.BR LC_ALL=C.UTF\-8 :
+.TP
+.BR name ", " version ", " release
+Mandatory shell variables identifying the package name, upstream version,
+and CRUX release number.
+.TP
+.B source=(\fIentry\fR ...)
+Optional bash array of source files.
+Entries beginning with
+.BR http:// ,
+.BR https:// ,
+.BR ftp:// ,
+or
+.B file://
+are fetched into
+.IR source_cache ;
+all other entries are resolved as local files in the port directory.
+.TP
+.B renames=(\fIname\fR|SKIP ...)
+Optional bash array parallel to
+.BR source ,
+renaming downloaded files inside
+.IR source_cache .
+Use
+.B SKIP
+to leave an entry unrenamed.
+.TP
+.B build()
+Mandatory bash function executed with
+.B set \-e
+and
+.B umask 022
+in working directory
+.IR $SRC ,
+installing package files into
+.IR $PKG .
+.TP
+.B unpack_source()
+Optional bash function overriding the default source extraction step
+(which extracts tar/zip/rpm/7z archives with
+.B bsdtar \-p \-o \-C "$SRC" \-xf
+and copies non\-archive files into
+.IR $SRC ).
+.SS Companion Port Files and Output Archive
+Integrity and packaging checks follow CRUX
+.BR pkgmk (8)
+conventions using companion files in the port directory rather than in\-file
+checksum arrays:
+.TP
+.I .md5sum
+MD5 digests of source files checked before
+.B build()
+unless ignored.
+.TP
+.I .signature
+Cryptographic
+.B signify
+signature covering
+.BR Pkgfile ,
+.IR .footprint ,
+and source files, verified when
+.B ignore_signature = false
+and
+.B \-\-ignore\-signature
+is not set.
+.TP
+.I .footprint
+Expected sorted package file listing (normalizing
+.I lib/modules/<uname \-r>/
+to
+.IR lib/modules/<kernel\-version>/ ).
+If absent on first build,
+.B kpm build
+warns and creates a new
+.IR .footprint .
+.TP
+.I .nostrip
+Line\-delimited patterns passed to
+.B grep \-v \-f
+to exclude files from ELF stripping.
+.PP
+Built archives are written to
+.I <package_dir>/<name>#<version>\-<release>.pkg.tar.<compression>
+using
+.B bsdtar \-\-format=gnutar
+(falling back to
+.B tar
+if
+.B bsdtar
+is absent).
+.SH ENVIRONMENT
+.TP
+.B KPM_CONFIG
+Path to the INI configuration file used when
+.BR \-c / \-\-config
+is not passed on the command line.
+Setting
+.B KPM_CONFIG
+treats the configuration path as explicit (failing if the file cannot be read).
+.TP
+.B NO_COLOR
+When set to any non\-empty value, disables ANSI color output in
+.B auto
+color mode.
+.TP
+.B TERM
+When set to
+.BR dumb ,
+disables ANSI color output in
+.B auto
+color mode.
+.TP
+.B PATH
+Searched for helper utilities used during archive handling, builds, and
+verification:
+.BR bash ,
+.BR bsdtar ,
+.BR tar ,
+.BR xz ,
+.BR zstd ,
+.BR lzip ,
+.BR gzip ,
+.BR strip ,
+.BR file ,
+.BR signify ,
+.BR curl ,
+.BR wget ,
+and
+.BR uname .
+.SS Exported to Child Processes
+During
+.B kpm sync \-\-ports
+the variable
+.B PORTS_DIR
+is exported to each port driver.
+During
+.B kpm build
+the following variables are exported to the
+.B Pkgfile
+shell:
+.BR SRC ,
+.BR PKG ,
+.BR PKGMK_ROOT ,
+.BR PKGMK_SOURCE_DIR ,
+.BR PKGMK_PACKAGE_DIR ,
+.BR PKGMK_WORK_DIR ,
+.BR JOBS ,
+.BR CFLAGS ,
+.BR CXXFLAGS ,
+.BR LDFLAGS
+(when configured),
+.BR MAKEFLAGS ,
+and
+.BR LC_ALL=C.UTF\-8 .
+.SH FILES
+.TP
+.I /etc/kpm.ini
+Default manual INI configuration file.
+.TP
+.I /etc/pkgadd.conf
+CRUX
+.B INSTALL
+and
+.B UPGRADE
+file handling rules.
+.TP
+.I /etc/ld.so.conf
+Checked under
+.I <root>
+before executing
+.B /sbin/ldconfig \-r \fI<root>\fR.
+.TP
+.IR /etc/ports/ ", " /etc/ports/drivers/
+CRUX port collection definitions and executable drivers invoked by
+.BR "kpm sync \-\-ports" .
+.TP
+.I /usr/ports
+Default local CRUX ports tree.
+.TP
+.I <root>/var/lib/pkg
+Directory locked via non\-blocking
+.BR flock (2)
+.RB ( LOCK_SH
+for read\-only commands,
+.B LOCK_EX
+for install, upgrade, and remove transactions).
+.TP
+.I <root>/var/lib/pkg/db
+CRUX plain\-text installed package database.
+.TP
+.I <root>/var/lib/pkg/db.incomplete_transaction
+Temporary mode\-0444 staging file synchronized with
+.BR fsync (2)
+before atomic database replacement.
+.TP
+.I <root>/var/lib/pkg/db.backup
+Hardlink backup of the previous database created immediately prior to
+renaming the committed transaction into place.
+.TP
+.I <root>/var/lib/pkg/rejected/
+Directory storing upgraded files held back by
+.B UPGRADE ... NO
+rules when their content or permissions differ from the installed version.
+.TP
+.I /var/lib/kpm/world
+Explicitly installed package list (locked alongside
+.IR /var/lib/pkg )
+used by
+.B kpm info
+and
+.BR "kpm autoremove" .
+.TP
+.I /var/lib/kpm/hold
+Pinned/held packages skipped during
+.B kpm update
+(merged with
+.B [repo] hold
+in
+.IR /etc/kpm.ini ).
+.TP
+.I /var/cache/kpm/index.json
+Locally cached binary repository index written by
+.BR "kpm sync" .
+.TP
+.I /var/cache/kpm/bin/
+Cache directory for downloaded, SHA\-256 verified binary archives.
+.TP
+.I /var/cache/kpm/sources/
+Cache directory for downloaded upstream source archives used by
+.BR "kpm build" .
+.TP
+.I /var/cache/kpm/packages/
+Default output directory for archives built with
+.BR "kpm build" .
+.TP
+.I /var/cache/kpm/work/
+Temporary build directory containing per\-port
+.I src/
+and
+.I pkg/
+subdirectories.
+.SH ADVANCED COMMANDS
+.TP
+.B kpm info \fIpkg\fR ...
+Display full metadata (Name, Version, Collection, Description, URL, Installed status, Runtime Depends, Make Depends, and Required By reverse dependencies).
+.TP
+.B kpm autoremove \fR[\fB\-\-dry\-run\fR]
+Identify and remove orphaned dependency packages no longer required by any package listed in
+.IR /var/lib/kpm/world .
+.TP
+.B kpm clean \fR[\fB\-\-all\fR] [\fB\-\-bin\fR] [\fB\-\-sources\fR] [\fB\-\-packages\fR] [\fB\-\-keep \fIN\fR] [\fB\-\-dry\-run\fR]
+Prune stale cached binary archives, partial downloads, locally built packages, and unused upstream sources while retaining installed/latest
+.I N
+versions by default.
+.TP
+.B kpm check \fR[\fB\-\-broken\fR] [\fB\-\-files\fR] [\fIpkg\fR ...]
+With
+.BR \-\-broken ,
+scans installed ELF binaries and shared libraries natively in Go (equivalent to CRUX
+.BR revdep )
+to report missing
+.I .so
+shared library dependencies and affected packages.
+With
+.BR \-\-files ,
+verifies every file recorded in
+.I /var/lib/pkg/db
+exists on disk with expected types and permissions.
+Without flags, runs
+.BR "kpm doctor" .
+.TP
+.B kpm hold \fR[\fB\-\-list\fR | \fIpkg\fR ...] / \fBkpm unhold \fIpkg\fR ...
+Pin or unpin packages in
+.I /var/lib/kpm/hold
+(also configurable via
+.B [repo] hold = pkg1, pkg2
+in
+.IR /etc/kpm.ini ).
+Held packages are skipped by
+.B kpm update
+unless
+.B \-\-ignore\-hold
+is passed.
+.TP
+.B kpm install \fIpkg\fB=\fIver\fR / \fBkpm downgrade \fIpkg\fR[\fB=\fIver\fR]
+Install a specific package version from
+.I index.json
+or
+.IR /var/cache/kpm/bin/ ,
+or roll back an installed package to its previous available version.
+.TP
+.B kpm rejected \fR[\fB\-\-list\fR | \fB\-\-diff\fR | \fB\-\-keep \fIfile|all\fR | \fB\-\-upgrade \fIfile|all\fR | \fB\-\-merge \fIfile|all\fR]
+Inspect, diff, keep, upgrade, or conflict\-merge files in
+.I /var/lib/pkg/rejected/
+(non\-interactively or interactively via the shared
+.BR rejmerge (8)
+backend).
+.SH CRUX MULTI\-CALL SYMLINK COMPATIBILITY
+When
+.B kpm
+is invoked via compatibility symlinks installed in
+.I /usr/bin
+(created by default via
+.BR "make install" ),
+it dispatches on
+.B argv[0]
+with 100% upstream CRUX flag, configuration, output, and exit\-code parity:
+.TP
+.B pkgadd
+Supports
+.BR \-u / \-\-upgrade ,
+.BR \-f / \-\-force ,
+.BR \-r / \-\-root ,
+.BR \-c / \-\-config ,
+.BR \-v ,
+.BR \-h ,
+and exact
+.I /etc/pkgadd.conf
++
+.I /var/lib/pkg/rejected/
+semantics.
+.TP
+.B pkgrm
+Supports
+.BR \-r / \-\-root ,
+.BR \-v ,
+.BR \-h ,
+shared\-file preservation, and reverse directory cleanup.
+.TP
+.B pkginfo
+Supports
+.BR \-i / \-\-installed ,
+.BR \-l / \-\-list ,
+.BR \-o / \-\-owner ,
+.BR \-f / \-\-footprint
+(archives and directories),
+.BR \-r / \-\-root ,
+.BR \-v ,
+.BR \-h
+with exact stock CRUX output formatting.
+.TP
+.B pkgmk
+Supports all 26 upstream flags
+.RB ( \-i ,
+.BR \-u ,
+.BR \-r ,
+.BR \-d ,
+.BR \-do ,
+.BR \-eo ,
+.BR \-utd ,
+.BR \-uf ,
+.BR \-if ,
+.BR \-in ,
+.BR \-um ,
+.BR \-im ,
+.BR \-cm ,
+.BR \-us ,
+.BR \-cs ,
+.BR \-is ,
+.BR \-rs ,
+.BR \-sk ,
+.BR \-pk ,
+.BR \-ns ,
+.BR \-f ,
+.BR \-c ,
+.BR \-kw ,
+.BR \-cf ,
+.BR \-v ,
+.BR \-h ),
+.I /etc/pkgmk.conf
+and
+.B PKGMK_*
+environment variables,
+.I .32bit
+architecture detection, current\-directory
+.B Pkgfile
+execution with no arguments, and upstream exit codes
+.BR 1 .. 10 .
+.TP
+.B ports
+Supports
+.BR \-u / \-\-update " [collection...],"
+.BR \-l / \-\-list ,
+.BR \-d / \-\-diff ,
+.BR \-v ,
+.BR \-h ,
+and custom drivers in
+.IR /etc/ports/drivers/ .
+.TP
+.B rejmerge
+Supports
+.BR \-r / \-\-root ,
+.BR \-v ,
+.BR \-h ,
+interactive permissions/diff/merge/file menus, and automatic empty directory cleanup.
+.SH EXIT STATUS
+.SS kpm
+.TP
+.B 0
+Command completed successfully.
+.TP
+.B 1
+Operational error (configuration load error, missing binary in
+.IR index.json ,
+HTTP, signature, or SHA\-256 verification failure, database lock contention, file
+conflict without
+.BR \-\-force ,
+reverse dependency refusal without
+.BR \-\-force ,
+build or footprint failure, or missing root privileges for package
+installation/removal).
+.TP
+.B 2
+Command\-line usage error (missing subcommand, unknown global option, or
+unknown subcommand).
+.SS kpm\-index
+.TP
+.B 0
+Repository index created or updated successfully.
+.TP
+.B 1
+Operational error (invalid
+.BR \-\-base\-url ,
+unreadable existing index, signing error, or filesystem write failure).
+.TP
+.B 2
+Invalid command\-line flag syntax.
+.SH EXAMPLES
+Synchronize the remote binary index (with optional signature verification) and CRUX ports collections:
+.RS
+.PP
+.nf
+kpm sync
+kpm sync \-\-verify
+kpm sync \-\-ports core opt
+.fi
+.RE
+.PP
+Search across binaries, local ports, and installed packages, inspect full metadata, and list ports/installed packages:
+.RS
+.PP
+.nf
+kpm search zlib
+kpm info zlib
+kpm list \-\-ports
+kpm list \-\-diff
+kpm list \-\-owner 'usr/bin/git$'
+.fi
+.RE
+.PP
+Install a binary package (or a pinned version) with its binary dependencies:
+.RS
+.PP
+.nf
+kpm install \-\-deps git
+kpm install zlib=1.3.1\-1
+.fi
+.RE
+.PP
+When no binary exists in
+.IR index.json ,
+explicitly build and install the port from the local CRUX ports tree:
+.RS
+.PP
+.nf
+kpm build \-\-deps \-\-install myport
+.fi
+.RE
+.PP
+Preview and apply binary\-first system upgrades, hold/unhold, downgrade, prune orphans, clean cache, and check ABI/file health:
+.RS
+.PP
+.nf
+kpm update \-\-dry\-run
+kpm update
+kpm hold linux
+kpm downgrade foo
+kpm remove myport
+kpm autoremove \-\-dry\-run
+kpm clean \-\-keep 2
+kpm check \-\-broken
+kpm check \-\-files
+kpm rejected \-\-list
+.fi
+.RE
+.PP
+Install a package into an alternative CRUX root filesystem using a custom
+INI configuration:
+.RS
+.PP
+.nf
+kpm \-\-config /etc/kpm.ini \-\-root /mnt/crux install zlib
+.fi
+.RE
+.PP
+Generate, prune, and sign
+.I index.json
+for a
+.B rolling\-x86_64
+release using
+.BR kpm\-index :
+.RS
+.PP
+.nf
+kpm\-index \e
+  \-\-packages ./pkg \e
+  \-\-ports\-dir /usr/ports \e
+  \-\-index ./pkg/index.json \e
+  \-\-arch x86_64 \e
+  \-\-base\-url https://github.com/kryx-linux/ports/releases/download/rolling\-x86_64 \e
+  \-\-sign\-key ./kryx\-release.sec \e
+  \-\-prune
+.fi
+.RE
+.SH AUTHORS
+Safwan Ehfaz Saad <ezke5>
+.SH SEE ALSO
+.BR pkgmk (8),
+.BR pkgadd (8),
+.BR pkgrm (8),
+.BR pkginfo (8),
+.BR ports (8),
+.BR rejmerge (8),
+.BR kryx\-src (8),
+.BR gports (8)

@@ -1,0 +1,33 @@
+{
+  "version": "rolling-3.8",
+  "release_date": "2026-11-24",
+  "arch": "x86_64",
+  "signify_key_id": "2528a8ef6bb01ca3",
+  "signify_fingerprint": "SHA256:JSio72uwHKPFO8HgwqaTitUg26aaKcZxLlwRHIjtSg8",
+  "artifacts": [
+    {
+      "name": "kryx-rootfs-x86_64-rolling.tar.xz",
+      "kind": "RootFS Tarball",
+      "arch": "x86_64",
+      "size": "148 MiB",
+      "url": "https://github.com/kryx-linux/iso/releases/latest/download/kryx-rootfs-x86_64-rolling.tar.xz",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "kryx-linux-x86_64.iso",
+      "kind": "Live / Installer ISO (GRUB BIOS + UEFI)",
+      "arch": "x86_64",
+      "size": "420 MiB",
+      "url": "https://github.com/kryx-linux/iso/releases/latest/download/kryx-linux-x86_64.iso",
+      "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+    },
+    {
+      "name": "ghcr.io/kryx-linux/iso:latest",
+      "kind": "OCI Container Image",
+      "arch": "x86_64",
+      "size": "152 MiB",
+      "url": "https://github.com/kryx-linux/iso/pkgs/container/iso",
+      "sha256": "verify via docker/podman digest"
+    }
+  ]
+}

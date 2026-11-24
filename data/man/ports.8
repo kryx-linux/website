@@ -1,0 +1,242 @@
+.TH PORTS 8 "November 2026" "kryx-linux" "System Administration"
+.SH NAME
+ports \- integrated, zero\-dependency pure\-Go CRUX/KryX Linux ports utility (built into kpm)
+.SH SYNOPSIS
+.B ports
+.RI [ options ]
+.I command
+.RI [ args ...\& ]
+.br
+.B kpm ports
+.RI [ options ]
+.I command
+.RI [ args ...\& ]
+.SH DESCRIPTION
+.B ports
+is the integrated, statically linked
+.RB ( CGO_ENABLED=0 )
+pure\-Go ports management utility built directly into
+.BR kpm (8)
+(invoked via the
+.I /usr/bin/ports
+multi\-call symlink or
+.BR "kpm ports" ).
+It replaces CRUX Linux's traditional
+.BR ports (8)
+script and the former standalone
+.B gports
+utility with zero external CLI runtime dependencies.
+All native synchronization protocols
+.RB ( git ", " rsync ", " httpup ", " tarball ),
+.B Pkgfile
+metadata parsing, searching, and package database comparisons are implemented natively in Go, while also preserving transparent fallback to classic CRUX
+.I /etc/ports/*.{httpup,rsync,git}
+drivers when
+.I /etc/ports/sources.list
+is not present.
+.PP
+.B ports
+shares configuration directly with
+.BR kpm (8)
+by reading
+.IR /etc/kpm.ini
+(or
+.IR $KPM_CONFIG )
+for
+.BR root ,
+.BR ports_dir ,
+and
+.BR collections
+priority order, and by reading CRUX's installed package database
+.RI ( <root>/var/lib/pkg/db )
+under a shared
+.BR flock (2)
+lock on
+.IR <root>/var/lib/pkg .
+.SH COMMANDS
+.TP
+.B \-u\fR, \fB\-\-update\fR, \fBupdate \fR[\fIcollection\fR ...]
+Concurrently synchronize all configured port collections (or only the named
+collections) using a bounded worker pool.
+Runs pre\-flight DNS and TCP reachability diagnostics before starting workers
+unless
+.B \-\-no\-netcheck
+is passed, and cleanly handles
+.B SIGINT
+/
+.B SIGTERM
+cancellation.
+.TP
+.B \-l\fR, \fB\-\-list\fR, \fBlist \fR[\fIcollection\fR ...]
+List available local ports under
+.I ports_dir
+in CRUX
+.I <collection>/<port>
+format (matching
+.B ports \-l
+and
+.BR "kpm list \-\-ports" ).
+Pass
+.B \-\-collections
+to display configured collection sync states instead.
+.TP
+.B \-d\fR, \fB\-\-diff\fR, \fBdiff \fR[\fIcollection\fR ...]
+Compare local port versions parsed natively from
+.B Pkgfile
+recipes against installed package versions in
+.IR <root>/var/lib/pkg/db ,
+honoring
+.B kpm.ini
+collection priority order and numeric\-aware version comparison.
+Prints a
+.I "Collection  Name  Port  Installed"
+table (including
+.I MISSING
+for installed packages absent from local ports) or
+.IR "No differences found" .
+.TP
+.B \-s\fR, \fB\-\-search\fR, \fBsearch \fIquery\fR ...
+Perform a fast local case\-insensitive substring search across port names,
+relative paths, and
+.B "# Description:"
+headers, printing matches as
+.IR "<collection>/<port> <version> - <description>" .
+.TP
+.B status
+Inspect configured collections from
+.I sources.list
+without network I/O and print a table of collection name, protocol, destination
+directory, and local sync status (including short Git HEAD commit and port count).
+.TP
+.B check
+Validate
+.I sources.list
+and
+.I sources.list.d/*.list
+syntax and run pre\-flight
+.IR /etc/resolv.conf ,
+DNS, and TCP connectivity checks without modifying
+.IR ports_dir .
+.SH OPTIONS
+.TP
+.BR \-j ", " \-\-jobs " \fIn\fR"
+Maximum number of concurrent collection sync workers (default:
+.BR 4 ).
+.TP
+.BR \-c ", " \-\-config " \fIpath\fR"
+Path to the primary
+.I sources.list
+file (default:
+.I $PORTS_CONFIG
+or
+.IR /etc/ports/sources.list ).
+.TP
+.B \-\-kpm\-config \fIpath\fR
+Explicit path to
+.BR kpm (8)
+INI configuration file (default:
+.I $KPM_CONFIG
+or
+.IR /etc/kpm.ini ).
+.TP
+.BR \-r ", " \-\-root " \fIdir\fR"
+Override
+.B [paths] root
+from
+.I kpm.ini
+when reading
+.IR var/lib/pkg/db .
+.TP
+.BR \-p ", " \-\-ports\-dir " \fIdir\fR"
+Override
+.B [paths] ports_dir
+from
+.I kpm.ini
+(default:
+.IR $PORTS_DIR ,
+.IR $KPM_PORTS_DIR ,
+.IR $KRYX_PORTS_DIR ,
+or
+.IR /usr/ports ).
+.TP
+.B \-\-collections
+With
+.BR \-l / list ,
+show configured collection sync status (equivalent to
+.BR "ports status" ).
+.TP
+.B \-\-no\-netcheck
+Skip pre\-flight DNS and TCP reachability checks before syncing.
+.TP
+.BR \-v ", " \-\-version
+Print version information and exit 0.
+.TP
+.BR \-h ", " \-\-help
+Print usage summary and exit 0.
+.SH CONFIGURATION
+.B ports
+reads collection sources from
+.I /etc/ports/sources.list
+and optional drop\-in files matching
+.IR /etc/ports/sources.list.d/*.list
+(falling back automatically to legacy
+.I /etc/gports/sources.list
+if present).
+Each non\-comment line has the format:
+.RS
+.PP
+.nf
+<protocol> <collection> <url> [destination_dir]
+.fi
+.RE
+.SH ENVIRONMENT
+.TP
+.B KPM_CONFIG
+Path to
+.I kpm.ini
+(shared with
+.BR kpm (8)).
+.TP
+.B PORTS_CONFIG
+Override default path to
+.IR sources.list .
+.TP
+.B PORTS_DIR\fR, \fBKPM_PORTS_DIR\fR, \fBKRYX_PORTS_DIR
+Override default local ports root directory.
+.SH FILES
+.TP
+.I /etc/ports/sources.list
+Primary collection sources list.
+.TP
+.I /etc/ports/sources.list.d/*.list
+Optional drop\-in collection definitions loaded in lexicographical order.
+.TP
+.I /etc/kpm.ini
+Shared
+.BR kpm (8)
+INI configuration file.
+.TP
+.I <root>/var/lib/pkg/db
+CRUX/kpm installed package database read under a shared
+.BR flock (2)
+lock during
+.BR "ports \-d" .
+.SH EXAMPLES
+.RS
+.PP
+.nf
+ports check
+ports \-u
+ports \-u \-j 2 core opt
+ports \-l
+ports \-d
+ports \-s ripgrep
+ports status
+kpm ports \-u
+.fi
+.RE
+.SH SEE ALSO
+.BR kpm (8),
+.BR kpm\-index (8),
+.BR kryx\-src (8),
+.BR pkginfo (8)
