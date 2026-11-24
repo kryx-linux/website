@@ -68,7 +68,7 @@ verify_index_signature = true
 Drop additional overlays in `/etc/ports/sources.list.d/*.list` (legacy `/etc/gports/sources.list` is still read automatically as a fallback if `/etc/ports/sources.list` does not exist):
 
 ```text
-git rolling https://github.com/kryx-linux/ports.git /usr/ports/rolling-repo
+git kryx    https://github.com/kryx-linux/ports.git
 git core    https://github.com/kryx-linux/core.git
 git opt     https://github.com/kryx-linux/opt.git
 git xorg    https://github.com/kryx-linux/xorg.git
