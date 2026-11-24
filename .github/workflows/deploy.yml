@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout website repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -37,9 +39,15 @@ jobs:
           fi
 
       - name: Clone kryx-linux/kpm man pages & kryx-linux ports collections
+        env:
+          GIT_TERMINAL_PROMPT: "0"
         run: |
-          git clone --depth 1 https://github.com/kryx-linux/kpm.git _kpm || true
+          set -euo pipefail
+          git clone --depth 1 https://github.com/kryx-linux/kpm.git _kpm \
+            || git clone --depth 1 https://github.com/kryx-linux/pe.git _kpm \
+            || true
 
+          rm -rf _ports _ports_meta
           mkdir -p _ports
           for col in core opt xorg contrib; do
             REPO_URL="https://github.com/kryx-linux/${col}.git"
@@ -51,19 +59,29 @@ jobs:
               fi
             done
             if [ -n "$BRANCH" ]; then
-              git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "_ports/${col}" || true
+              git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "_ports/${col}"
             else
-              git clone --depth 1 "$REPO_URL" "_ports/${col}" || true
+              git clone --depth 1 "$REPO_URL" "_ports/${col}"
             fi
           done
 
-          git clone --depth 1 https://github.com/kryx-linux/ports.git _ports_meta || true
-          for col in pkg-tools kernel rolling; do
+          git clone --depth 1 https://github.com/kryx-linux/ports.git _ports_meta
+          for col in pkg-tools kernel; do
             if [ -d "_ports_meta/${col}" ]; then
               cp -a "_ports_meta/${col}" "_ports/${col}"
             fi
           done
           rm -rf _ports_meta
+
+          echo "=== Cloned port counts ==="
+          for col in pkg-tools kernel core opt xorg contrib; do
+            cnt="$(find "_ports/${col}" -maxdepth 2 -name Pkgfile 2>/dev/null | wc -l)"
+            echo "${col}: ${cnt}"
+            if [ "$cnt" -eq 0 ]; then
+              echo "ERROR: collection ${col} has 0 Pkgfiles in _ports/${col}" >&2
+              exit 1
+            fi
+          done
 
       - name: Vet and test static site generator
         run: |

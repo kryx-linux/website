@@ -124,8 +124,8 @@ func BuildSite(opts BuildOptions) error {
 		return err
 	}
 
-	// 3. Discover ports tree (local or fallback from index.json).
-	portsByCol, portsByName := DiscoverPorts(opts.PortsDir, idx)
+	// 3. Discover ports tree (local, GitHub tarballs when online, or fallback from index.json).
+	portsByCol, portsByName := DiscoverPorts(opts.PortsDir, idx, opts.Offline)
 
 	// 4. Render Home (/).
 	if err := renderMarkdownPage(filepath.Join(opts.ContentDir, "index.md"), filepath.Join(opts.OutDir, "index.html"), site, "home", "/", false); err != nil {
@@ -334,7 +334,7 @@ func buildManSection(outDir string, site SiteContext, pages []ManPage) error {
 
 	return writeHTMLPage(filepath.Join(outDir, "index.html"), site, PageMeta{
 		Title:       "Manual Pages",
-		Description: "Web manual pages for kpm(8), kpm-index(8), kryx-src(8), and gports(8).",
+		Description: "Web manual pages for kpm(8), kpm-index(8), kryx-src(8), and ports(8).",
 		ActiveNav:   "docs",
 		Canonical:   "/man/",
 	}, idxBody.String())

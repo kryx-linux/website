@@ -146,11 +146,11 @@ func GeneratePackagesPages(outDir string, site SiteContext, idx RepoIndex, ports
 			lastBucket = bucket
 		}
 		col := e.Collection
-		if col == "" {
+		if col == "" || col == "rolling" {
 			if pr, ok := portsByName[name]; ok && pr.Collection != "" {
 				col = pr.Collection
 			} else {
-				col = "rolling"
+				col = normalizeCollection(col, name)
 			}
 		}
 		desc := e.Description
@@ -197,12 +197,10 @@ func GeneratePackagesPages(outDir string, site SiteContext, idx RepoIndex, ports
 			desc = portRec.Description
 		}
 		col := latest.Collection
-		if col == "" && hasPort {
+		if (col == "" || col == "rolling") && hasPort && portRec.Collection != "" {
 			col = portRec.Collection
 		}
-		if col == "" {
-			col = "rolling"
-		}
+		col = normalizeCollection(col, name)
 
 		var body strings.Builder
 		fmt.Fprintf(&body, "<p class=\"meta-note\"><a href=\"/packages/\">&larr; All packages</a></p>\n")

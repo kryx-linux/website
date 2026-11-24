@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"encoding/xml"
 	"io/fs"
 	"os"
@@ -157,5 +160,75 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 	navBlock := string(homeHTML)[navStart : navStart+navEnd]
 	if got := strings.Count(navBlock, "<a "); got != 8 {
 		t.Fatalf("expected strictly 8 top-nav links, got %d:\n%s", got, navBlock)
+	}
+}
+
+func TestDiscoverPortsSiblingReposAndTarGz(t *testing.T) {
+	ws := t.TempDir()
+	writePkg := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(ws, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writePkg("ports/pkg-tools/kpm/Pkgfile", "# Description: kpm\nname=kpm\nversion=0.6.0\nrelease=1\n")
+	writePkg("ports/kernel/linux6.18/Pkgfile", "# Description: kernel\nname=kernel\nversion=6.18.64\nrelease=2\n")
+	writePkg("core/zlib/Pkgfile", "# Description: zlib\nname=zlib\nversion=1.4\nrelease=1\n")
+	writePkg("opt/grub2/Pkgfile", "# Description: grub2\nname=grub2\nversion=2.16\nrelease=1\n")
+
+	byCol, byName := DiscoverPorts(filepath.Join(ws, "ports"), RepoIndex{}, true)
+	if len(byCol["pkg-tools"]) != 1 || len(byCol["kernel"]) != 1 || len(byCol["core"]) != 1 || len(byCol["opt"]) != 1 {
+		t.Fatalf("unexpected sibling discovery counts: pkg-tools=%d kernel=%d core=%d opt=%d",
+			len(byCol["pkg-tools"]), len(byCol["kernel"]), len(byCol["core"]), len(byCol["opt"]))
+	}
+	if byName["kernel"].Collection != "kernel" || byName["zlib"].Collection != "core" {
+		t.Fatalf("unexpected collection mapping: %+v", byName)
+	}
+
+	// Verify tarball streaming extraction for both single-collection and multi-collection GitHub archives.
+	makeTarGz := func(files map[string]string) *bytes.Buffer {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gz)
+		for name, body := range files {
+			hdr := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}
+			if err := tw.WriteHeader(hdr); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tw.Write([]byte(body)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := tw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := gz.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return &buf
+	}
+
+	coreTar := makeTarGz(map[string]string{
+		"core-main/bash/Pkgfile": "# Description: GNU Bash\nname=bash\nversion=5.3\nrelease=1\n",
+		"core-main/README.md":    "ignore me",
+	})
+	gotCore, err := extractPortsFromTarGz(coreTar, "core", nil)
+	if err != nil || len(gotCore["core"]) != 1 || gotCore["core"][0].Name != "bash" {
+		t.Fatalf("extractPortsFromTarGz(core) failed: got=%+v err=%v", gotCore, err)
+	}
+
+	metaTar := makeTarGz(map[string]string{
+		"ports-main/pkg-tools/kpm/Pkgfile":      "# Description: kpm\nname=kpm\nversion=0.6.0\nrelease=1\n",
+		"ports-main/kernel/linux6.18/Pkgfile":   "# Description: kernel\nname=kernel\nversion=6.18.64\nrelease=2\n",
+		"ports-main/ignored/foo/Pkgfile":        "# Description: skip\nname=foo\nversion=1\nrelease=1\n",
+	})
+	gotMeta, err := extractPortsFromTarGz(metaTar, "", map[string]bool{"pkg-tools": true, "kernel": true})
+	if err != nil || len(gotMeta["pkg-tools"]) != 1 || len(gotMeta["kernel"]) != 1 || len(gotMeta["ignored"]) != 0 {
+		t.Fatalf("extractPortsFromTarGz(meta) failed: got=%+v err=%v", gotMeta, err)
 	}
 }
