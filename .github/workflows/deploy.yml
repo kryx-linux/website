@@ -57,7 +57,7 @@ jobs:
             fi
           done
 
-          git clone --depth 1 --recurse-submodules https://github.com/kryx-linux/ports.git _ports_meta || true
+          git clone --depth 1 https://github.com/kryx-linux/ports.git _ports_meta || true
           for col in pkg-tools kernel rolling; do
             if [ -d "_ports_meta/${col}" ]; then
               cp -a "_ports_meta/${col}" "_ports/${col}"
