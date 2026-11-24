@@ -55,7 +55,7 @@ sudo kpm sync --verify
 
 ## Live ISO Installation (`kryx-linux-x86_64.iso`)
 
-`kryx-linux-x86_64.iso` is a hybrid **GRUB (BIOS + UEFI)** minimal live image with `kpm`, `gports`, `signify`, `/etc/kpm/keys/kryx-release.pub`, and the `setup` / `setup-chroot` installer pre-configured. After partitioning and mounting your target disk at `/mnt`:
+`kryx-linux-x86_64.iso` is a hybrid **GRUB (BIOS + UEFI)** minimal live image powered by CRUX's `linux-6.18.63` ISO kernel, `kpm` (with integrated `ports` and CRUX symlinks), `signify`, `/etc/kpm/keys/kryx-release.pub`, and the `setup` / `setup-chroot` installer pre-configured. After partitioning and mounting your target disk at `/mnt`:
 
 ```sh
 setup /mnt
@@ -64,11 +64,11 @@ setup-chroot /mnt
 
 ## Bootstrap from Any Live Linux ISO
 
-Because `kpm` and `gports` are static Go binaries (`CGO_ENABLED=0`), you can also install KryX Linux onto `/mnt` from any x86_64 live environment (CRUX, Arch, Debian, Fedora, or Alpine):
+Because `kpm` (including integrated `ports`) is a static Go binary (`CGO_ENABLED=0`), you can also install KryX Linux onto `/mnt` from any x86_64 live environment (CRUX, Arch, Debian, Fedora, or Alpine):
 
 ```sh
 setup-repo --root /mnt --key https://kryx.anrix.org/kryx-release.pub --verify
-kpm --root /mnt install --deps kpm gports kernel grub2 grub2-efi efibootmgr
+kpm --root /mnt install --deps kpm kernel grub2 grub2-efi efibootmgr
 setup-chroot /mnt
 ```
 

@@ -1,6 +1,6 @@
 ---
 title: System Configuration
-description: Reference for /etc/kpm.ini, /etc/gports/sources.list, /etc/pkgadd.conf, signify signing keys, and multi-repository overlays.
+description: Reference for /etc/kpm.ini, /etc/ports/sources.list, /etc/pkgadd.conf, signify signing keys, and multi-repository overlays.
 order: 4
 toc: true
 ---
@@ -17,13 +17,13 @@ Override the active configuration file with `kpm --config <file>` or `KPM_CONFIG
 [paths]
 root = /
 ports_dir = /usr/ports
-collections = rolling, core, opt, xorg, contrib
+collections = pkg-tools, kernel, core, opt, xorg, contrib
 cache_dir = /var/cache/kpm
 source_cache = /var/cache/kpm/sources
 package_dir = /var/cache/kpm/packages
 work_dir = /var/cache/kpm/work
 pkgadd_conf = /etc/pkgadd.conf
-keys_dir = /etc/kpm/keys.d
+keys_dir = /etc/kpm/keys
 
 [repo]
 repository = kryx-linux/ports
@@ -31,7 +31,7 @@ tag = rolling-x86_64
 arch = x86_64
 index_url = https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/index.json
 verify_index_signature = true
-pubkey = /etc/kpm/keys.d/kryx-official.pub
+pubkey = /etc/kpm/keys/kryx-release.pub
 hold =
 timeout_seconds = 120
 
@@ -63,9 +63,9 @@ tag = testing-x86_64
 verify_index_signature = true
 ```
 
-## `/etc/gports/sources.list`
+## `/etc/ports/sources.list`
 
-Drop additional overlays in `/etc/gports/sources.list.d/*.list`:
+Drop additional overlays in `/etc/ports/sources.list.d/*.list` (legacy `/etc/gports/sources.list` is still read automatically as a fallback if `/etc/ports/sources.list` does not exist):
 
 ```text
 git rolling https://github.com/kryx-linux/ports.git /usr/ports/rolling-repo
@@ -83,7 +83,7 @@ Protect local configuration files from being silently overwritten during upgrade
 UPGRADE		^etc/.*$		NO
 UPGRADE		^var/log/.*$		NO
 UPGRADE		^etc/kpm\.ini$		NO
-UPGRADE		^etc/gports/sources\.list$	NO
+UPGRADE		^etc/ports/sources\.list$	NO
 ```
 
 When a protected file changes in an upgraded archive, `kpm` places the new file under `/var/lib/pkg/rejected/` for review via `kpm rejected` or `rejmerge`.

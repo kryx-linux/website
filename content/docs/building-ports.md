@@ -45,29 +45,30 @@ sudo kpm build --deps --sync --install mytool
 sudo kpm build . --deps --install
 
 # Build directly from a Git URL (Nix-like direct repo build)
-sudo kpm build https://github.com/kryx-linux/gports@main --deps --install
+sudo kpm build https://github.com/kryx-linux/kpm@main --deps --install
 ```
 
-## Syncing and Diffing Ports with `gports`
+## Syncing and Diffing Ports with `ports` (`kpm ports`)
 
-`gports` is a standalone, pure-Go ports synchronizer (`git`, `rsync`, `httpup`, `tarball`) with zero external shell commands:
+`ports` is built directly into `kpm` (invoked via `/usr/bin/ports` or `kpm ports`) as a zero-`os/exec`, pure-Go ports synchronizer (`git`, `rsync`, `httpup`, `tarball`) with automatic CRUX driver fallback:
 
 ```sh
-gports check            # Validate sources.list and DNS/TCP reachability
-sudo gports -u          # Sync all collections concurrently
-gports -l               # List local ports (<collection>/<port>)
-gports -d               # Diff local port versions against /var/lib/pkg/db
-gports -s wayland       # Search port names and descriptions
+ports check            # Validate /etc/ports/sources.list and DNS/TCP reachability
+sudo ports -u          # Sync all collections concurrently (kryx-linux/{core,opt,xorg,contrib,ports})
+ports -l               # List local ports (<collection>/<port>)
+ports -d               # Diff local port versions against /var/lib/pkg/db
+ports -s wayland       # Search port names and descriptions
+ports status           # Inspect configured collections and local sync state
 ```
 
 ## Automated Builds & CI Staging with `kryx-src`
 
-`kryx-src` never hardcodes `/usr/ports`. It resolves the ports tree via `--ports-dir` / `-P`, `$KRYX_PORTS_DIR`, `$KPM_PORTS_DIR`, `kpm.ini`, or workspace auto-detection (`./ports`, `./core`, `./Pkgfile`):
+`kryx-src` never hardcodes `/usr/ports`. It resolves the ports tree via `--ports-dir` / `-P`, `$KRYX_PORTS_DIR`, `$KPM_PORTS_DIR`, `kpm.ini`, or workspace auto-detection (`./ports`, `./pkg-tools`, `./kernel`, `./core`, `./Pkgfile`):
 
 ```sh
 kryx-src lint --ports-dir ./ports
-kryx-src plan --ports-dir ./ports --max-ports 20 --compact rolling/kpm
-kryx-src pkg --ports-dir ./ports --work-root /tmp/work --out-dir ./dist --deps --sync-index rolling/kpm
+kryx-src plan --ports-dir ./ports --max-ports 20 --compact pkg-tools/kpm
+kryx-src pkg --ports-dir ./ports --work-root /tmp/work --out-dir ./dist --deps --sync-index pkg-tools/kpm
 kryx-src stage --packages ./dist --ports-dir ./ports --index ./dist/index.json --upload-dir ./dist/upload
 kryx-src sign --signify --key ./kryx-release.sec --file ./dist/index.json
 ```

@@ -88,7 +88,7 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 		"packages/kpm.html",
 		"packages/wlroots.html",
 		"ports/index.html",
-		"ports/rolling/index.html",
+		"ports/pkg-tools/index.html",
 		"man/index.html",
 		"man/kpm.8.html",
 		"man/kpm-index.8.html",

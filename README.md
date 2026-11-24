@@ -10,7 +10,7 @@ Ultra-fast, text-first, **zero-JavaScript** static website for **KryX Linux**, b
 - **Build-time generated pages:**
   - `/packages/` & `/packages/<pkg>.html` from `index.json` (live fetch with offline fixture fallback)
   - `/ports/` & `/ports/<collection>/` from local or CI-cloned ports trees (with `Pkgfile` source)
-  - `/man/` & `/man/<name>.html` converted directly from roff man pages (`kpm.8`, `kpm-index.8`, `kryx-src.8`, `gports.8`)
+  - `/man/` & `/man/<name>.html` converted directly from roff man pages (`kpm.8`, `kpm-index.8`, `kryx-src.8`, `ports.8`)
   - `/docs/` Handbook with automatic Table of Contents and clickable `#` heading anchors
   - `/news/` & `/feed.xml` (valid RSS 2.0 XML)
   - `/status/` repository summary, CI badges, and signing key fingerprint
@@ -48,7 +48,7 @@ go run ./cmd/sitegen \
   -site-url https://kryx.anrix.org \
   -index-url https://github.com/kryx-linux/ports/releases/download/rolling-x86_64/index.json \
   -ports-dir ../ports \
-  -man-dirs ../kpm/man,../gports/man,data/man
+  -man-dirs ../kpm/man,data/man
 ```
 
 ## Deploying to Cloudflare Pages (`kryx.anrix.org`)

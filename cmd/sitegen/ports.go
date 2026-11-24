@@ -33,14 +33,15 @@ func (p PortRecipe) FullVersion() string {
 	return p.Version + "-" + p.Release
 }
 
-var portCollectionsOrder = []string{"rolling", "core", "opt", "xorg", "contrib"}
+var portCollectionsOrder = []string{"pkg-tools", "kernel", "core", "opt", "xorg", "contrib"}
 
 var collectionDescriptions = map[string]string{
-	"rolling": "KryX Linux first-party rolling packages (kpm, gports, kernel, limine, zig)",
-	"core":    "Essential CRUX base system, toolchain, and runtime libraries",
-	"opt":     "Optional system utilities, Wayland stack, and applications",
-	"xorg":    "X.Org libraries, Wayland/DRM compatibility, fonts, and graphics drivers",
-	"contrib": "Community-maintained third-party CRUX/KryX ports",
+	"pkg-tools": "KryX Linux first-party package manager & toolchain ports (kpm with integrated ports, zig)",
+	"kernel":    "KryX Linux rolling LTS kernel recipes (linux6.18)",
+	"core":      "Essential CRUX 3.8-derived base system, toolchain, and runtime libraries",
+	"opt":       "Optional system utilities, GRUB bootloaders, Wayland stack, and applications",
+	"xorg":      "X.Org libraries, Wayland/DRM compatibility, fonts, and graphics drivers",
+	"contrib":   "Community-maintained third-party CRUX/KryX ports",
 }
 
 // DiscoverPorts scans portsDir for standard CRUX/KryX collections (rolling, core, opt, xorg, contrib).
@@ -78,7 +79,7 @@ func DiscoverPorts(portsDir string, idx RepoIndex) (byCollection map[string][]Po
 	if len(byName) == 0 {
 		for name, pkg := range idx.Packages {
 			e := latestEntry(pkg)
-			col := defaultStr(e.Collection, "rolling")
+			col := defaultStr(e.Collection, "pkg-tools")
 			pr := PortRecipe{
 				Collection:  col,
 				DirName:     name,

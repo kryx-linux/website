@@ -53,14 +53,14 @@ setup-repo \
   --verify
 ```
 
-This creates `/mnt/etc/kpm.ini`, `/mnt/etc/gports/sources.list`, `/mnt/etc/pkgadd.conf`, `/mnt/var/lib/pkg/db`, and syncs the verified `index.json` into `/mnt/var/cache/kpm/`.
+This creates `/mnt/etc/kpm.ini`, `/mnt/etc/ports/sources.list`, `/mnt/etc/pkgadd.conf`, `/mnt/var/lib/pkg/db`, and syncs the verified `index.json` into `/mnt/var/cache/kpm/`.
 
 ## 3. Install Kernel, Bootloader, and Core Tools
 
 Install binary packages into `/mnt` with automatic runtime dependency resolution (if you used Option B or C, or want extra packages):
 
 ```sh
-kpm --root=/mnt install --deps kpm gports kernel grub2 grub2-efi efibootmgr
+kpm --root=/mnt install --deps kpm kernel grub2 grub2-efi efibootmgr
 ```
 
 ## 4. Enter the Target System (`setup-chroot`)
@@ -106,8 +106,8 @@ grub-mkconfig -o /boot/grub/grub.cfg
 If you plan to compile custom ports or overlays locally:
 
 ```sh
-gports check
-gports -u
+ports check
+ports -u
 ```
 
 ## 7. Reboot

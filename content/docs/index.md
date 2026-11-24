@@ -11,10 +11,10 @@ Concise, practical documentation for installing, running, and packaging software
 
 ## Core Guides
 
-1. [Installation Guide](/docs/installation.html) — Partitioning, bootstrapping from RootFS or any x86_64 live ISO, `setup-repo`, `setup-chroot`, kernel, and Limine bootloader setup.
-2. [`kpm` Package Management](/docs/kpm.html) — Syncing, binary installs, version pinning, holds, downgrades, orphan pruning, ABI checks (`kpm check --broken`), rejected config merges, and 100% CRUX symlink parity.
-3. [Building Ports (`Pkgfile` & `kryx-src`)](/docs/building-ports.html) — Writing `Pkgfile` recipes, `# Make depends on:`, local/git Nix-like builds, overlays with `gports`, and `kryx-src` CI staging.
-4. [System Configuration](/docs/configuration.html) — `/etc/kpm.ini`, `/etc/gports/sources.list`, `/etc/pkgadd.conf`, `signify` key rotation, and Wayland/CLI base setup.
+1. [Installation Guide](/docs/installation.html) — Partitioning, installing from the KryX Live ISO (`setup` & `setup-chroot`) or any x86_64 live ISO (`setup-repo`), kernel, and GRUB (BIOS + UEFI) bootloader setup.
+2. [`kpm` Package Management](/docs/kpm.html) — Syncing, binary installs, version pinning, holds, downgrades, orphan pruning, ABI checks (`kpm check --broken`), rejected config merges, integrated `ports`, and 100% CRUX symlink parity.
+3. [Building Ports (`Pkgfile` & `kryx-src`)](/docs/building-ports.html) — Writing `Pkgfile` recipes, `# Make depends on:`, local/git Nix-like builds, overlays with `ports`, and `kryx-src` CI staging.
+4. [System Configuration](/docs/configuration.html) — `/etc/kpm.ini`, `/etc/ports/sources.list`, `/etc/pkgadd.conf`, `signify` key rotation, and Wayland/CLI base setup.
 
 ## Web Manual Pages
 

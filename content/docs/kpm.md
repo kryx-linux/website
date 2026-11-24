@@ -99,7 +99,7 @@ sudo kpm rejected --keep all
 - `pkgrm` (`-r`, `-v`, `-h`)
 - `pkginfo` (`-i`, `-l`, `-o`, `-f`, `-r`, `-v`, `-h`)
 - `pkgmk` (all 26 upstream flags, `/etc/pkgmk.conf`, `PKGMK_*` env, `.32bit`, exit codes `1..10`)
-- `ports` (`-u`, `-l`, `-d`, `/etc/ports/drivers/`)
+- `ports` (integrated pure-Go `ports` syncer: `-u`, `-l`, `-d`, `-s`, `status`, `check`, `/etc/ports/sources.list`, plus classic `/etc/ports/drivers/` fallback; also runnable as `kpm ports`)
 - `rejmerge` (`-r`, `-v`, `-h`, interactive permissions/diff/merge menus)
 
 See the full [`kpm(8)` web man page](/man/kpm.8.html) for every option and exit code.

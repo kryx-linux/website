@@ -9,10 +9,10 @@ description: CRUX-inspired, binary-first, minimal Linux distribution focused on 
 
 ## Core Philosophy
 
-- **Keep it simple and inspectable:** Plain-text configuration (`/etc/kpm.ini`, `/etc/gports/sources.list`, `/var/lib/pkg/db`), no hidden daemons, and zero runtime bloat.
+- **Keep it simple and inspectable:** Plain-text configuration (`/etc/kpm.ini`, `/etc/ports/sources.list`, `/var/lib/pkg/db`), no hidden daemons, and zero runtime bloat.
 - **Binary-first by default, source-ready on demand:** `kpm install` downloads SHA-256 and `signify`-verified `.pkg.tar.zst` archives immediately. When you want custom flags or a port without a binary, `kpm build` compiles cleanly from local `Pkgfile` recipes and satisfies `# Make depends on:` from prebuilt binaries.
-- **100% CRUX `pkgutils` & `ports` parity:** Every stock CRUX command (`pkgadd`, `pkgrm`, `pkginfo`, `pkgmk`, `ports`, `rejmerge`) works identically via multi-call symlinks to `/usr/bin/kpm`.
-- **Static, self-contained toolchain:** Core distribution utilities (`kpm`, `kpm-index`, `kryx-src`, `gports`) compile statically (`CGO_ENABLED=0`) with zero external runtime dependencies—allowing you to bootstrap KryX from any x86_64 live Linux ISO.
+- **100% CRUX `pkgutils` & `ports` parity:** Every stock CRUX command (`pkgadd`, `pkgrm`, `pkginfo`, `pkgmk`, `ports`, `rejmerge`) works identically via multi-call symlinks to `/usr/bin/kpm`, with the pure-Go `ports` syncer (`git`, `rsync`, `httpup`, `tarball`) built directly into `kpm`.
+- **Static, self-contained toolchain:** Core distribution utilities (`kpm`, `kpm-index`, `kryx-src`) compile statically (`CGO_ENABLED=0`) with zero external runtime dependencies—allowing you to bootstrap KryX from any x86_64 live Linux ISO.
 
 ## Architecture at a Glance
 
@@ -37,7 +37,7 @@ kpm install --deps wlroots
 Prefer compiling from ports with binary build-dependencies (`# Make depends on:`)?
 
 ```sh
-gports -u
+ports -u
 kpm build --deps --sync --install zig
 ```
 

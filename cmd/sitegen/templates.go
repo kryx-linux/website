@@ -207,7 +207,7 @@ Signing Key ID: %s (%s)
    sha256sum -c --ignore-missing SHA256SUMS.txt
    tar -xpf kryx-rootfs-x86_64-rolling.tar.xz -C /mnt
    setup-repo --root /mnt --key %s/kryx-release.pub --verify
-   kpm --root=/mnt install --deps kpm gports kernel grub2 grub2-efi efibootmgr
+   kpm --root=/mnt install --deps kpm kernel grub2 grub2-efi efibootmgr
 
 3. CHROOT & VERIFY SYSTEM HEALTH
    setup-chroot /mnt
@@ -225,8 +225,8 @@ Signing Key ID: %s (%s)
    grub-mkconfig -o /boot/grub/grub.cfg
 
 5. OPTIONAL: SYNC LOCAL PORTS TREE
-   gports check
-   gports -u
+   ports check
+   ports -u
 
 6. REBOOT
    exit

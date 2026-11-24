@@ -36,13 +36,15 @@ jobs:
             ./scripts/fetch-fonts.sh
           fi
 
-      - name: Clone kryx-linux/ports collections for live /ports/ browser
+      - name: Clone kryx-linux/kpm man pages & kryx-linux ports collections
         run: |
+          git clone --depth 1 https://github.com/kryx-linux/kpm.git _kpm || true
+
           mkdir -p _ports
           for col in core opt xorg contrib; do
             REPO_URL="https://github.com/kryx-linux/${col}.git"
             BRANCH=""
-            for cand in 3.8 main 3.7; do
+            for cand in main lts crux 3.8; do
               if git ls-remote --exit-code --heads "$REPO_URL" "$cand" >/dev/null 2>&1; then
                 BRANCH="$cand"
                 break
@@ -54,10 +56,13 @@ jobs:
               git clone --depth 1 "$REPO_URL" "_ports/${col}" || true
             fi
           done
-          git clone --depth 1 https://github.com/kryx-linux/ports.git _ports_meta || true
-          if [ -d _ports_meta/rolling ]; then
-            cp -a _ports_meta/rolling _ports/rolling
-          fi
+
+          git clone --depth 1 --recurse-submodules https://github.com/kryx-linux/ports.git _ports_meta || true
+          for col in pkg-tools kernel rolling; do
+            if [ -d "_ports_meta/${col}" ]; then
+              cp -a "_ports_meta/${col}" "_ports/${col}"
+            fi
+          done
           rm -rf _ports_meta
 
       - name: Vet and test static site generator
@@ -67,10 +72,15 @@ jobs:
 
       - name: Build static site into public/
         run: |
+          MAN_DIRS="data/man"
+          if [ -d _kpm/man ]; then
+            MAN_DIRS="_kpm/man,data/man"
+          fi
           CGO_ENABLED=0 go run ./cmd/sitegen \
             -out public \
             -site-url https://kryx.anrix.org \
-            -ports-dir _ports
+            -ports-dir _ports \
+            -man-dirs "$MAN_DIRS"
 
       - name: Enforce strict 0-byte JavaScript invariant
         run: |
@@ -86,8 +96,20 @@ jobs:
           fi
           echo "Verified: 0 bytes of client-side JavaScript in public/"
 
+      - name: Check Cloudflare Pages credentials
+        id: cf
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy to Cloudflare Pages
-        if: github.event_name != 'pull_request' && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != ''
+        if: github.event_name != 'pull_request' && steps.cf.outputs.enabled == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
