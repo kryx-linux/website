@@ -73,4 +73,4 @@ kryx-src stage --packages ./dist --ports-dir ./ports --index ./dist/index.json -
 kryx-src sign --signify --key ./kryx-release.sec --file ./dist/index.json
 ```
 
-See [`kryx-src(8)`](/man/kryx-src.8.html) and [`ports(8)`](/man/ports.8.html) for full flag documentation.
+See [`kryx-src(8)`](/man/kryx-src.8.html), [`ports(8)`](/man/ports.8.html), and [Packaging `.deb` Archives into a `Pkgfile`](/docs/packaging-deb.html) for prebuilt Debian package recipes.

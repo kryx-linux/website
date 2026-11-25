@@ -96,31 +96,35 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
-    <div class="brand-row">
-      <a class="brand-link" href="/">
-        <img class="brand-logo" src="/kryx.svg" alt="" width="28" height="25">
-        <span>KryX Linux</span>
-      </a>
-      <span class="brand-tagline">CRUX-inspired &middot; binary-first &middot; x86_64</span>
+    <div class="header-inner">
+      <div class="brand-row">
+        <a class="brand-link" href="/">
+          <img class="brand-logo" src="/kryx.svg" alt="" width="26" height="23">
+          <span>KryX Linux</span>
+        </a>
+        <span class="brand-tagline">CRUX-inspired &middot; binary-first &middot; x86_64</span>
+      </div>
+      <nav class="site-nav" aria-label="Primary">
+        %s
+      </nav>
     </div>
-    <nav class="site-nav" aria-label="Primary">
-      %s
-    </nav>
   </header>
   <main id="main">
 %s
   </main>
   <footer class="site-footer">
-    <div class="footer-links">
-      <a href="/man/">Man Pages</a>
-      <a href="/install.txt">install.txt</a>
-      <a href="/SHA256SUMS.txt">SHA256SUMS.txt</a>
-      <a href="/kryx-release.pub">kryx-release.pub</a>
-      <a href="/packages.txt">packages.txt</a>
-      <a href="/feed.xml">RSS Feed</a>
-      <a href="https://github.com/kryx-linux">GitHub</a>
+    <div class="footer-inner">
+      <div class="footer-links">
+        <a href="/man/">Man Pages</a>
+        <a href="/install.txt">install.txt</a>
+        <a href="/SHA256SUMS.txt">SHA256SUMS.txt</a>
+        <a href="/kryx-release.pub">kryx-release.pub</a>
+        <a href="/packages.txt">packages.txt</a>
+        <a href="/feed.xml">RSS Feed</a>
+        <a href="https://github.com/kryx-linux">GitHub</a>
+      </div>
+      <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of JavaScript &middot; built %s UTC.</p>
     </div>
-    <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of JavaScript &middot; self-hosted Atkinson Hyperlegible &middot; built %s UTC.</p>
   </footer>
 </body>
 </html>

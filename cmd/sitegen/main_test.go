@@ -86,6 +86,7 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 		"docs/installation.html",
 		"docs/kpm.html",
 		"docs/building-ports.html",
+		"docs/packaging-deb.html",
 		"docs/configuration.html",
 		"packages/index.html",
 		"packages/kpm.html",
