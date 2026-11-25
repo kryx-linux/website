@@ -35,3 +35,5 @@ For live-ISO installation or SSH terminals without a browser:
 - [/SHA256SUMS.txt](/SHA256SUMS.txt) — Release archive SHA-256 checksums
 - [/kryx-release.pub](/kryx-release.pub) — Public `signify` signing key
 - [/packages.txt](/packages.txt) — Plain-text binary package index
+- [/ports.txt](/ports.txt) — Plain-text ports tree index
+- [/search/](/search/) — Server-side zero-JS search (also supports `?q=<query>&format=txt` for `curl`)

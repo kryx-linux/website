@@ -395,14 +395,15 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 
 	var indexBody strings.Builder
 	indexBody.WriteString("<h1>Ports Tree</h1>\n")
-	fmt.Fprintf(&indexBody, "<p class=\"meta-note\">%d port recipe(s) across KryX &amp; CRUX collections.</p>\n", totalPorts)
+	fmt.Fprintf(&indexBody, "<p class=\"meta-note\">%d port recipe(s) across KryX &amp; CRUX collections. Plain-text index: <a href=\"/ports.txt\">/ports.txt</a>.</p>\n", totalPorts)
 	indexBody.WriteString("<p>Sync all local collections natively with <code>ports -u</code> (pure-Go <code>git</code>/<code>rsync</code>/<code>httpup</code> integrated into <code>kpm</code>) and build any port from source with <code>kpm build --deps --sync &lt;port&gt;</code>.</p>\n")
+	indexBody.WriteString(renderSearchForm("", "ports", "Search ports across all collections..."))
 
 	indexBody.WriteString("<h2>Collections</h2>\n<div class=\"table-wrap\">\n<table>\n<thead>\n<tr><th>Collection</th><th>Ports</th><th>Description</th></tr>\n</thead>\n<tbody>\n")
 	for _, col := range portCollectionsOrder {
 		list := byCol[col]
 		desc := collectionDescriptions[col]
-		fmt.Fprintf(&indexBody, "<tr><td><a href=\"/ports/%s/\"><strong>%s</strong></a></td><td>%d</td><td>%s</td></tr>\n",
+		fmt.Fprintf(&indexBody, "<tr><td><a href=\"/ports/%s/\">%s</a></td><td>%d</td><td>%s</td></tr>\n",
 			html.EscapeString(col), html.EscapeString(col), len(list), html.EscapeString(desc))
 	}
 	indexBody.WriteString("</tbody>\n</table>\n</div>\n")
@@ -434,6 +435,7 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 		body.WriteString("<p class=\"meta-note\"><a href=\"/ports/\">&larr; All collections</a></p>\n")
 		fmt.Fprintf(&body, "<h1>Ports: <code>%s</code></h1>\n", html.EscapeString(col))
 		fmt.Fprintf(&body, "<p>%s (%d port(s)).</p>\n", html.EscapeString(collectionDescriptions[col]), len(list))
+		body.WriteString(renderSearchForm("", "ports", "Search ports..."))
 
 		if len(list) == 0 {
 			body.WriteString("<p class=\"meta-note\">No local ports scanned for this collection in the current build snapshot. Sync locally with <code>ports -u " + html.EscapeString(col) + "</code>.</p>\n")
@@ -452,11 +454,11 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 				isFirstParty := col == "kpm-tools" || col == "kernel" || col == "system"
 				portLink := ""
 				if hasBin {
-					portLink = fmt.Sprintf("<a href=\"/packages/%s.html\"><strong>%s</strong></a>", html.EscapeString(p.Name), html.EscapeString(p.Name))
+					portLink = fmt.Sprintf("<a href=\"/packages/%s.html\">%s</a>", html.EscapeString(p.Name), html.EscapeString(p.Name))
 				} else if isFirstParty && p.RawPkgfile != "" {
-					portLink = fmt.Sprintf("<a href=\"/ports/%s/%s.html\"><strong>%s</strong></a>", html.EscapeString(col), html.EscapeString(p.DirName), html.EscapeString(p.Name))
+					portLink = fmt.Sprintf("<a href=\"/ports/%s/%s.html\">%s</a>", html.EscapeString(col), html.EscapeString(p.DirName), html.EscapeString(p.Name))
 				} else {
-					portLink = fmt.Sprintf("<strong>%s</strong>", html.EscapeString(p.Name))
+					portLink = html.EscapeString(p.Name)
 				}
 				binStatus := "source"
 				if hasBin {

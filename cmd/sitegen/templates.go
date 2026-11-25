@@ -99,10 +99,9 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
     <div class="header-inner">
       <div class="brand-row">
         <a class="brand-link" href="/">
-          <img class="brand-logo" src="/kryx.svg" alt="" width="26" height="23">
+          <img class="brand-logo" src="/kryx.svg" alt="" width="24" height="21">
           <span>KryX Linux</span>
         </a>
-        <span class="brand-tagline">CRUX-inspired &middot; binary-first &middot; x86_64</span>
       </div>
       <nav class="site-nav" aria-label="Primary">
         %s
@@ -115,15 +114,17 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
   <footer class="site-footer">
     <div class="footer-inner">
       <div class="footer-links">
+        <a href="/search/">Search</a>
         <a href="/man/">Man Pages</a>
         <a href="/install.txt">install.txt</a>
         <a href="/SHA256SUMS.txt">SHA256SUMS.txt</a>
         <a href="/kryx-release.pub">kryx-release.pub</a>
         <a href="/packages.txt">packages.txt</a>
+        <a href="/ports.txt">ports.txt</a>
         <a href="/feed.xml">RSS Feed</a>
         <a href="https://github.com/kryx-linux">GitHub</a>
       </div>
-      <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of JavaScript &middot; built %s UTC.</p>
+      <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of client-side JavaScript &middot; built %s UTC.</p>
     </div>
   </footer>
 </body>
@@ -155,7 +156,7 @@ func renderDownloadArtifactsTable(rel ReleaseInfo) string {
 		if len(shortSum) > 16 && !strings.Contains(shortSum, " ") {
 			shortSum = shortSum[:16] + "…"
 		}
-		fmt.Fprintf(&sb, "<tr><td><a href=\"%s\"><strong>%s</strong></a></td><td>%s</td><td><code>%s</code></td><td>%s</td><td><code title=\"%s\">%s</code></td></tr>\n",
+		fmt.Fprintf(&sb, "<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td><code>%s</code></td><td>%s</td><td><code title=\"%s\">%s</code></td></tr>\n",
 			html.EscapeString(a.URL),
 			html.EscapeString(a.Name),
 			html.EscapeString(a.Kind),
@@ -262,9 +263,9 @@ func renderStatusPage(site SiteContext, idx RepoIndex, indexSource string, byCol
 	sb.WriteString("<p>Live snapshot of KryX Linux's <code>rolling-x86_64</code> binary repository, ports collections, signing key identity, and CI pipelines.</p>\n")
 
 	sb.WriteString("<h2>Repository Summary</h2>\n<div class=\"table-wrap\">\n<table>\n<tbody>\n")
-	fmt.Fprintf(&sb, "<tr><th>Binary Packages Indexed</th><td><strong>%d</strong> (<a href=\"/packages/\">browse</a>)</td></tr>\n", len(idx.Packages))
-	fmt.Fprintf(&sb, "<tr><th>Port Recipes Indexed</th><td><strong>%d</strong> (<a href=\"/ports/\">browse</a>)</td></tr>\n", totalPorts)
-	fmt.Fprintf(&sb, "<tr><th>Web Man Pages</th><td><strong>%d</strong> (<a href=\"/man/\">browse</a>)</td></tr>\n", manCount)
+	fmt.Fprintf(&sb, "<tr><th>Binary Packages Indexed</th><td>%d (<a href=\"/packages/\">browse</a>)</td></tr>\n", len(idx.Packages))
+	fmt.Fprintf(&sb, "<tr><th>Port Recipes Indexed</th><td>%d (<a href=\"/ports/\">browse</a>)</td></tr>\n", totalPorts)
+	fmt.Fprintf(&sb, "<tr><th>Web Man Pages</th><td>%d (<a href=\"/man/\">browse</a>)</td></tr>\n", manCount)
 	fmt.Fprintf(&sb, "<tr><th>Release Channel</th><td><code>rolling-x86_64</code> (%s)</td></tr>\n", html.EscapeString(rel.Version))
 	fmt.Fprintf(&sb, "<tr><th>Index Source</th><td><code>%s</code></td></tr>\n", html.EscapeString(indexSource))
 	fmt.Fprintf(&sb, "<tr><th>Last Site Sync (UTC)</th><td><code>%s</code></td></tr>\n", site.BuildTime.UTC().Format(time.RFC3339))
@@ -291,5 +292,95 @@ func renderStatusPage(site SiteContext, idx RepoIndex, indexSource string, byCol
 	}
 	sb.WriteString("</tbody>\n</table>\n</div>\n")
 
+	return sb.String()
+}
+
+func renderHomePage(rel ReleaseInfo, idx RepoIndex, portsByCol map[string][]PortRecipe, newsPosts []NewsPost) string {
+	totalPorts := 0
+	for _, col := range portCollectionsOrder {
+		totalPorts += len(portsByCol[col])
+	}
+
+	var sb strings.Builder
+	sb.WriteString("<section class=\"hero\">\n")
+	sb.WriteString("  <div class=\"hero-emblem\"><img src=\"/kryx.svg\" alt=\"KryX Linux\" width=\"96\" height=\"84\"></div>\n")
+	sb.WriteString("  <div class=\"hero-copy\">\n")
+	sb.WriteString("    <h1>KryX Linux</h1>\n")
+	sb.WriteString("    <p class=\"hero-lead\">A lightweight, CRUX-inspired rolling Linux distribution for x86_64 with binary-first packages, BSD-style ports, and a static pure-Go toolchain.</p>\n")
+	sb.WriteString("    <div class=\"hero-actions\">\n")
+	sb.WriteString("      <a class=\"btn btn-primary\" href=\"/download/\">Download</a>\n")
+	sb.WriteString("      <a class=\"btn\" href=\"/docs/\">Handbook</a>\n")
+	sb.WriteString("      <a class=\"btn\" href=\"/packages/\">Packages</a>\n")
+	sb.WriteString("      <a class=\"btn\" href=\"/ports/\">Ports</a>\n")
+	sb.WriteString("    </div>\n")
+	sb.WriteString(renderSearchForm("", "all", "Search packages, ports, docs, man pages..."))
+	sb.WriteString("  </div>\n")
+	sb.WriteString("</section>\n\n")
+
+	sb.WriteString("<div class=\"home-grid\">\n")
+
+	// Left column: Overview, features, and quick start
+	sb.WriteString("  <section class=\"home-section\">\n")
+	sb.WriteString("    <h2>Features</h2>\n")
+	sb.WriteString("    <div class=\"feature-grid\">\n")
+	sb.WriteString("      <div class=\"feature-card\">\n")
+	sb.WriteString("        <h3>Binary-First with kpm</h3>\n")
+	sb.WriteString("        <p>Install SHA-256 and signify-verified <code>.pkg.tar.zst</code> archives immediately with unified Tarjan/Kahn dependency resolution and ABI verification.</p>\n")
+	sb.WriteString("      </div>\n")
+	sb.WriteString("      <div class=\"feature-card\">\n")
+	sb.WriteString("        <h3>Integrated Pure-Go Ports</h3>\n")
+	sb.WriteString("        <p>Sync collections over git, rsync, httpup, or tarballs natively via <code>ports -u</code> and build from clean <code>Pkgfile</code> recipes on demand.</p>\n")
+	sb.WriteString("      </div>\n")
+	sb.WriteString("      <div class=\"feature-card\">\n")
+	sb.WriteString("        <h3>CRUX Parity &amp; Dual Init</h3>\n")
+	sb.WriteString("        <p>Full <code>pkgutils</code> multi-call compatibility (<code>pkgadd</code>, <code>pkgrm</code>, <code>pkginfo</code>, <code>pkgmk</code>, <code>rejmerge</code>) with CRUX BSD-style <code>rc</code> or opt-in <code>dinit</code>.</p>\n")
+	sb.WriteString("      </div>\n")
+	sb.WriteString("      <div class=\"feature-card\">\n")
+	sb.WriteString("        <h3>Static Toolchain</h3>\n")
+	sb.WriteString("        <p><code>kpm</code>, <code>kpm-index</code>, and <code>kryx-src</code> compile statically with zero runtime dependencies, bootstrapping cleanly from any x86_64 live ISO.</p>\n")
+	sb.WriteString("      </div>\n")
+	sb.WriteString("    </div>\n\n")
+
+	sb.WriteString("    <h2>Quick Start</h2>\n")
+	sb.WriteString("    <p>Sync the binary index, search, and install a package with dependencies:</p>\n")
+	sb.WriteString("    <pre><code>kpm sync\nkpm search wlroots\nkpm install --deps wlroots</code></pre>\n")
+	sb.WriteString("    <p>Compile directly from ports using prebuilt build dependencies (<code># Make depends on:</code>):</p>\n")
+	sb.WriteString("    <pre><code>ports -u\nkpm build --deps --sync --install zig</code></pre>\n")
+	sb.WriteString("    <p>Installing from a live ISO without a graphical browser?</p>\n")
+	sb.WriteString("    <pre><code>curl -s https://kryx.anrix.org/install.txt | less</code></pre>\n")
+	sb.WriteString("  </section>\n\n")
+
+	// Right column: Latest News + Snapshot summary
+	sb.WriteString("  <aside class=\"home-section\">\n")
+	sb.WriteString("    <h2>Latest News</h2>\n")
+	sb.WriteString("    <ul class=\"news-list\">\n")
+	maxNews := len(newsPosts)
+	if maxNews > 6 {
+		maxNews = 6
+	}
+	for _, p := range newsPosts[:maxNews] {
+		sb.WriteString("      <li>")
+		if p.Date != "" {
+			fmt.Fprintf(&sb, "<span class=\"news-date\">%s</span>", html.EscapeString(p.Date))
+		}
+		fmt.Fprintf(&sb, "<a href=\"/news/%s.html\">%s</a></li>\n",
+			html.EscapeString(p.Slug), html.EscapeString(p.Title))
+	}
+	sb.WriteString("    </ul>\n")
+	sb.WriteString("    <p class=\"meta-note\"><a href=\"/news/\">All news</a> &middot; <a href=\"/feed.xml\">RSS feed</a></p>\n")
+
+	sb.WriteString("    <div class=\"stat-box\">\n")
+	sb.WriteString("      <h3>Repository Snapshot</h3>\n")
+	sb.WriteString("      <ul>\n")
+	fmt.Fprintf(&sb, "        <li>Channel: <code>rolling-x86_64</code> (%s)</li>\n", html.EscapeString(rel.Version))
+	fmt.Fprintf(&sb, "        <li>Binary packages: <a href=\"/packages/\">%d indexed</a> (<a href=\"/packages.txt\">txt</a>)</li>\n", len(idx.Packages))
+	fmt.Fprintf(&sb, "        <li>Port recipes: <a href=\"/ports/\">%d across %d collections</a> (<a href=\"/ports.txt\">txt</a>)</li>\n", totalPorts, len(portCollectionsOrder))
+	sb.WriteString("        <li>Documentation: <a href=\"/docs/\">Handbook</a> &middot; <a href=\"/man/\">Man Pages</a></li>\n")
+	sb.WriteString("        <li>Signing key: <a href=\"/kryx-release.pub\">kryx-release.pub</a> (<a href=\"/status/\">verify</a>)</li>\n")
+	sb.WriteString("      </ul>\n")
+	sb.WriteString("    </div>\n")
+	sb.WriteString("  </aside>\n")
+
+	sb.WriteString("</div>\n")
 	return sb.String()
 }

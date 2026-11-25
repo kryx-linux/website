@@ -132,6 +132,7 @@ func GeneratePackagesPages(outDir string, site SiteContext, idx RepoIndex, ports
 	indexBody.WriteString("<h1>Binary Packages</h1>\n")
 	fmt.Fprintf(&indexBody, "<p class=\"meta-note\">%d package(s) indexed in <code>rolling-x86_64</code>. Plain-text index: <a href=\"/packages.txt\">/packages.txt</a>.</p>\n", len(names))
 	indexBody.WriteString("<p>Install any package binary-first with <code>kpm install --deps &lt;package&gt;</code> after running <code>kpm sync</code>.</p>\n")
+	indexBody.WriteString(renderSearchForm("", "packages", "Search binary packages..."))
 	indexBody.WriteString(renderAlphaJumpBar(lettersPresent))
 
 	indexBody.WriteString("<div class=\"table-wrap\">\n<table>\n<thead>\n<tr><th>Package</th><th>Version</th><th>Collection</th><th>Size</th><th>Description</th></tr>\n</thead>\n<tbody>\n")
@@ -159,7 +160,7 @@ func GeneratePackagesPages(outDir string, site SiteContext, idx RepoIndex, ports
 				desc = pr.Description
 			}
 		}
-		fmt.Fprintf(&indexBody, "<tr%s><td><a href=\"/packages/%s.html\"><strong>%s</strong></a></td><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
+		fmt.Fprintf(&indexBody, "<tr%s><td><a href=\"/packages/%s.html\">%s</a></td><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
 			rowAttr,
 			html.EscapeString(name),
 			html.EscapeString(name),

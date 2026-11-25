@@ -4,8 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"encoding/xml"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +108,9 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 		"SHA256SUMS.txt",
 		"kryx-release.pub",
 		"packages.txt",
+		"ports.txt",
+		"search-index.json",
+		"search/index.html",
 	}
 	for _, rel := range required {
 		p := filepath.Join(outDir, filepath.FromSlash(rel))
@@ -161,6 +167,76 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 	navBlock := string(homeHTML)[navStart : navStart+navEnd]
 	if got := strings.Count(navBlock, "<a "); got != 8 {
 		t.Fatalf("expected strictly 8 top-nav links, got %d:\n%s", got, navBlock)
+	}
+	if !strings.Contains(string(homeHTML), `action="/search"`) {
+		t.Fatalf("expected zero-JS search form on homepage")
+	}
+
+	// Verify search-index.json parses and contains expected kinds.
+	rawIdx, err := os.ReadFile(filepath.Join(outDir, "search-index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []SearchEntry
+	if err := json.Unmarshal(rawIdx, &entries); err != nil {
+		t.Fatalf("invalid search-index.json: %v", err)
+	}
+	if len(entries) < 10 {
+		t.Fatalf("expected >= 10 search entries, got %d", len(entries))
+	}
+
+	// Verify server-side zero-JS search handler (lynx/w3m/curl compatible).
+	handler := NewSiteHandler(outDir, SiteContext{
+		SiteURL:   "https://kryx.anrix.org",
+		BuildTime: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC),
+	})
+
+	// 1. HTML query matching binary package + docs
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/search?q=wlroots&scope=packages", nil)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /search?q=wlroots, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "/packages/wlroots.html") {
+		t.Fatalf("expected wlroots package link in search results:\n%s", body)
+	}
+	if strings.Contains(strings.ToLower(body), "<script") {
+		t.Fatalf("forbidden <script> tag in /search response")
+	}
+
+	// 2. Plain-text query for curl / terminal users
+	recTxt := httptest.NewRecorder()
+	reqTxt := httptest.NewRequest(http.MethodGet, "/search?q=kpm&format=txt", nil)
+	handler.ServeHTTP(recTxt, reqTxt)
+	if recTxt.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /search?q=kpm&format=txt, got %d", recTxt.Code)
+	}
+	if ct := recTxt.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("expected text/plain content-type, got %q", ct)
+	}
+	if !strings.Contains(recTxt.Body.String(), "https://kryx.anrix.org/packages/kpm.html") {
+		t.Fatalf("expected plain-text kpm URL, got:\n%s", recTxt.Body.String())
+	}
+
+	// 3. XSS escaping on hostile query parameter
+	recXSS := httptest.NewRecorder()
+	reqXSS := httptest.NewRequest(http.MethodGet, "/search?q=%3Cscript%3Ealert(1)%3C/script%3E", nil)
+	handler.ServeHTTP(recXSS, reqXSS)
+	if recXSS.Code != http.StatusOK {
+		t.Fatalf("expected 200 for escaped query, got %d", recXSS.Code)
+	}
+	if strings.Contains(strings.ToLower(recXSS.Body.String()), "<script") {
+		t.Fatalf("unescaped <script> leaked into /search HTML:\n%s", recXSS.Body.String())
+	}
+
+	// 4. Empty query serves static /search/index.html
+	recEmpty := httptest.NewRecorder()
+	reqEmpty := httptest.NewRequest(http.MethodGet, "/search", nil)
+	handler.ServeHTTP(recEmpty, reqEmpty)
+	if recEmpty.Code != http.StatusOK || !strings.Contains(recEmpty.Body.String(), "Example Queries") {
+		t.Fatalf("expected static search page on empty query, got status=%d", recEmpty.Code)
 	}
 }
 

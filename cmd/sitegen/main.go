@@ -49,8 +49,17 @@ func main() {
 	flag.Parse()
 
 	if strings.TrimSpace(*serveAddr) != "" {
-		fmt.Printf("Serving %s on http://%s\n", *outDir, strings.TrimPrefix(*serveAddr, ":"))
-		if err := http.ListenAndServe(*serveAddr, http.FileServer(http.Dir(*outDir))); err != nil {
+		addr := *serveAddr
+		display := addr
+		if strings.HasPrefix(display, ":") {
+			display = "127.0.0.1" + display
+		}
+		fmt.Printf("Serving %s on http://%s (with zero-JS /search handler)\n", *outDir, display)
+		handler := NewSiteHandler(*outDir, SiteContext{
+			SiteURL:   strings.TrimRight(*siteURL, "/"),
+			BuildTime: time.Now().UTC(),
+		})
+		if err := http.ListenAndServe(addr, handler); err != nil {
 			fmt.Fprintf(os.Stderr, "sitegen: serve failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -127,22 +136,18 @@ func BuildSite(opts BuildOptions) error {
 	// 3. Discover ports tree (local, GitHub tarballs when online, or fallback from index.json).
 	portsByCol, portsByName := DiscoverPorts(opts.PortsDir, idx, opts.Offline)
 
-	// 4. Render Home (/).
-	if err := renderMarkdownPage(filepath.Join(opts.ContentDir, "index.md"), filepath.Join(opts.OutDir, "index.html"), site, "home", "/", false); err != nil {
-		return err
-	}
-
-	// 5. Render Download (/download/) with generated artifacts table + Markdown guide.
+	// 4. Render Download (/download/) with generated artifacts table + Markdown guide.
 	if err := renderDownloadPage(filepath.Join(opts.ContentDir, "download.md"), filepath.Join(opts.OutDir, "download", "index.html"), site, rel); err != nil {
 		return err
 	}
 
-	// 6. Render Documentation / Handbook (/docs/).
-	if err := buildDocsSection(filepath.Join(opts.ContentDir, "docs"), filepath.Join(opts.OutDir, "docs"), site); err != nil {
+	// 5. Render Documentation / Handbook (/docs/).
+	docRecords, err := buildDocsSection(filepath.Join(opts.ContentDir, "docs"), filepath.Join(opts.OutDir, "docs"), site)
+	if err != nil {
 		return err
 	}
 
-	// 7. Render Web Man Pages (/man/).
+	// 6. Render Web Man Pages (/man/).
 	manPages, err := DiscoverManPages(opts.ManDirs)
 	if err != nil {
 		return err
@@ -151,7 +156,7 @@ func BuildSite(opts BuildOptions) error {
 		return err
 	}
 
-	// 8. Render Packages (/packages/ + /packages.txt) and Ports (/ports/).
+	// 7. Render Packages (/packages/ + /packages.txt) and Ports (/ports/).
 	if err := GeneratePackagesPages(opts.OutDir, site, idx, portsByName); err != nil {
 		return err
 	}
@@ -159,12 +164,23 @@ func BuildSite(opts BuildOptions) error {
 		return err
 	}
 
-	// 9. Render News (/news/) and RSS 2.0 Feed (/feed.xml).
+	// 8. Render News (/news/) and RSS 2.0 Feed (/feed.xml).
 	newsPosts, err := buildNewsSection(filepath.Join(opts.ContentDir, "news"), filepath.Join(opts.OutDir, "news"), site)
 	if err != nil {
 		return err
 	}
 	if err := GenerateRSSFeed(opts.OutDir, site.SiteURL, newsPosts, opts.BuildTime); err != nil {
+		return err
+	}
+
+	// 9. Render Void-style Home (/) with live Latest News and snapshot counts.
+	homeHTML := renderHomePage(rel, idx, portsByCol, newsPosts)
+	if err := writeHTMLPage(filepath.Join(opts.OutDir, "index.html"), site, PageMeta{
+		Title:       "KryX Linux",
+		Description: "CRUX-inspired, binary-first, minimal Linux distribution focused on clarity, Wayland/CLI speed, and pure-Go tooling.",
+		ActiveNav:   "home",
+		Canonical:   "/",
+	}, homeHTML); err != nil {
 		return err
 	}
 
@@ -179,13 +195,18 @@ func BuildSite(opts BuildOptions) error {
 		return err
 	}
 
-	// 11. Emit terminal-friendly plain-text endpoints (/install.txt, /SHA256SUMS.txt).
+	// 11. Emit terminal-friendly plain-text endpoints (/install.txt, /SHA256SUMS.txt)
+	// and zero-JS search index + /search/ + /ports.txt.
 	if err := generatePlainTextEndpoints(opts.OutDir, site, rel); err != nil {
 		return err
 	}
+	searchEntries := BuildSearchIndex(idx, portsByCol, portsByName, docRecords, manPages, newsPosts)
+	if err := GenerateSearchAssets(opts.OutDir, site, searchEntries, portsByCol); err != nil {
+		return err
+	}
 
-	fmt.Printf("Built KryX Linux static site -> %s (%d packages, %d man pages, %d news posts)\n",
-		opts.OutDir, len(idx.Packages), len(manPages), len(newsPosts))
+	fmt.Printf("Built KryX Linux static site -> %s (%d packages, %d search entries, %d man pages, %d news posts)\n",
+		opts.OutDir, len(idx.Packages), len(searchEntries), len(manPages), len(newsPosts))
 	return nil
 }
 
@@ -199,20 +220,6 @@ func loadReleaseInfo(path string) (ReleaseInfo, error) {
 		return rel, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return rel, nil
-}
-
-func renderMarkdownPage(srcMD, dstHTML string, site SiteContext, activeNav, canonical string, autoTOC bool) error {
-	raw, err := os.ReadFile(srcMD)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", srcMD, err)
-	}
-	doc := ParseMarkdown(string(raw), autoTOC)
-	return writeHTMLPage(dstHTML, site, PageMeta{
-		Title:       doc.Meta.Title,
-		Description: doc.Meta.Description,
-		ActiveNav:   activeNav,
-		Canonical:   canonical,
-	}, doc.HTML)
 }
 
 func renderDownloadPage(srcMD, dstHTML string, site SiteContext, rel ReleaseInfo) error {
@@ -237,15 +244,16 @@ func renderDownloadPage(srcMD, dstHTML string, site SiteContext, rel ReleaseInfo
 	}, combined)
 }
 
-func buildDocsSection(srcDir, outDir string, site SiteContext) error {
+func buildDocsSection(srcDir, outDir string, site SiteContext) ([]DocRecord, error) {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return fmt.Errorf("read docs dir %s: %w", srcDir, err)
+		return nil, fmt.Errorf("read docs dir %s: %w", srcDir, err)
 	}
 
 	type docItem struct {
 		slug  string
 		title string
+		desc  string
 		order int
 	}
 	var guides []docItem
@@ -255,12 +263,17 @@ func buildDocsSection(srcDir, outDir string, site SiteContext) error {
 		}
 		raw, rerr := os.ReadFile(filepath.Join(srcDir, e.Name()))
 		if rerr != nil {
-			return rerr
+			return nil, rerr
 		}
 		doc := ParseMarkdown(string(raw), true)
 		slug := strings.TrimSuffix(e.Name(), ".md")
 		if slug != "index" {
-			guides = append(guides, docItem{slug: slug, title: doc.Meta.Title, order: doc.Meta.Order})
+			guides = append(guides, docItem{
+				slug:  slug,
+				title: defaultStr(doc.Meta.Title, slug),
+				desc:  doc.Meta.Description,
+				order: doc.Meta.Order,
+			})
 		}
 	}
 	sort.Slice(guides, func(i, j int) bool {
@@ -270,13 +283,23 @@ func buildDocsSection(srcDir, outDir string, site SiteContext) error {
 		return guides[i].slug < guides[j].slug
 	})
 
+	records := make([]DocRecord, 0, len(guides))
+	for _, g := range guides {
+		records = append(records, DocRecord{
+			Slug:        g.slug,
+			Title:       g.title,
+			Description: g.desc,
+			URL:         "/docs/" + g.slug + ".html",
+		})
+	}
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
 		raw, rerr := os.ReadFile(filepath.Join(srcDir, e.Name()))
 		if rerr != nil {
-			return rerr
+			return nil, rerr
 		}
 		slug := strings.TrimSuffix(e.Name(), ".md")
 		doc := ParseMarkdown(string(raw), slug != "index")
@@ -287,6 +310,12 @@ func buildDocsSection(srcDir, outDir string, site SiteContext) error {
 		if slug == "index" {
 			canonical = "/docs/"
 			dst = filepath.Join(outDir, "index.html")
+			searchBox := renderSearchForm("", "docs", "Search Handbook guides...")
+			if idx := strings.Index(body, "<h2"); idx >= 0 {
+				body = body[:idx] + searchBox + body[idx:]
+			} else {
+				body = body + searchBox
+			}
 		} else {
 			body = "<p class=\"meta-note\"><a href=\"/docs/\">&larr; Handbook Index</a></p>\n" + body
 		}
@@ -297,10 +326,10 @@ func buildDocsSection(srcDir, outDir string, site SiteContext) error {
 			ActiveNav:   "docs",
 			Canonical:   canonical,
 		}, body); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return records, nil
 }
 
 func buildManSection(outDir string, site SiteContext, pages []ManPage) error {
@@ -314,7 +343,7 @@ func buildManSection(outDir string, site SiteContext, pages []ManPage) error {
 	idxBody.WriteString("<p>Generated directly from roff manual sources (<code>man(7)</code>) into semantic HTML.</p>\n")
 	idxBody.WriteString("<div class=\"table-wrap\">\n<table>\n<thead>\n<tr><th>Manual</th><th>Section</th><th>Summary</th></tr>\n</thead>\n<tbody>\n")
 	for _, mp := range pages {
-		fmt.Fprintf(&idxBody, "<tr><td><a href=\"/man/%s.html\"><strong>%s</strong></a></td><td>%s</td><td>%s</td></tr>\n",
+		fmt.Fprintf(&idxBody, "<tr><td><a href=\"/man/%s.html\">%s</a></td><td>%s</td><td>%s</td></tr>\n",
 			html.EscapeString(mp.Filename),
 			html.EscapeString(mp.Title),
 			html.EscapeString(mp.Section),
