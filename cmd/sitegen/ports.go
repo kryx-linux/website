@@ -21,7 +21,7 @@ import (
 type PortRecipe struct {
 	Collection  string
 	DirName     string
-	RelPath     string // e.g. "pkg-tools/kpm"
+	RelPath     string // e.g. "kpm-tools/kpm"
 	Name        string
 	Version     string
 	Release     string
@@ -40,10 +40,10 @@ func (p PortRecipe) FullVersion() string {
 	return p.Version + "-" + p.Release
 }
 
-var portCollectionsOrder = []string{"pkg-tools", "kernel", "system", "core", "opt", "xorg", "contrib", "compat-32"}
+var portCollectionsOrder = []string{"kpm-tools", "kernel", "system", "core", "opt", "xorg", "contrib", "compat-32"}
 
 var collectionDescriptions = map[string]string{
-	"pkg-tools": "KryX Linux first-party package manager & toolchain ports (kpm with integrated ports, zig)",
+	"kpm-tools": "KryX Linux first-party package manager & toolchain ports (kpm with integrated ports, zig)",
 	"kernel":    "KryX Linux rolling LTS kernel recipes (linux6.18)",
 	"system":    "KryX Linux first-party system & init ports (dinit, dinit-kryx, turnstile)",
 	"core":      "Essential CRUX 3.8-derived base system, toolchain, and runtime libraries",
@@ -53,14 +53,17 @@ var collectionDescriptions = map[string]string{
 	"compat-32": "32-bit multilib compatibility libraries for Steam, Wine, and legacy x86 software",
 }
 
-// normalizeCollection maps legacy collection names (like "rolling") onto active KryX collections.
+// normalizeCollection maps legacy collection names (like "rolling" or "pkg-tools") onto active KryX collections.
 func normalizeCollection(col, pkgName string) string {
 	col = strings.TrimSpace(col)
-	if col == "" || col == "rolling" {
+	if col == "" || col == "rolling" || col == "pkg-tools" {
 		if pkgName == "kernel" || strings.HasPrefix(pkgName, "linux") {
 			return "kernel"
 		}
-		return "pkg-tools"
+		if pkgName == "dinit" || pkgName == "dinit-kryx" || pkgName == "turnstile" {
+			return "system"
+		}
+		return "kpm-tools"
 	}
 	return col
 }
@@ -179,7 +182,7 @@ func fetchMissingCollections(missing []string) map[string][]PortRecipe {
 
 	for _, col := range missing {
 		switch col {
-		case "pkg-tools", "kernel", "system":
+		case "kpm-tools", "kernel", "system":
 			needMetaPorts = true
 			metaWant[col] = true
 		default:
@@ -408,7 +411,7 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 
 	if err := writeHTMLPage(filepath.Join(portsOutDir, "index.html"), site, PageMeta{
 		Title:       "Ports",
-		Description: "Browse KryX Linux and CRUX port collections (pkg-tools, kernel, core, opt, xorg, contrib).",
+		Description: "Browse KryX Linux and CRUX port collections (kpm-tools, kernel, system, core, opt, xorg, contrib, compat-32).",
 		ActiveNav:   "ports",
 		Canonical:   "/ports/",
 	}, indexBody.String()); err != nil {
@@ -446,7 +449,7 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 					lastBucket = bucket
 				}
 				_, hasBin := idx.Packages[p.Name]
-				isFirstParty := col == "pkg-tools" || col == "kernel"
+				isFirstParty := col == "kpm-tools" || col == "kernel" || col == "system"
 				portLink := ""
 				if hasBin {
 					portLink = fmt.Sprintf("<a href=\"/packages/%s.html\"><strong>%s</strong></a>", html.EscapeString(p.Name), html.EscapeString(p.Name))

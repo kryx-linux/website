@@ -63,12 +63,12 @@ ports status           # Inspect configured collections and local sync state
 
 ## Automated Builds & CI Staging with `kryx-src`
 
-`kryx-src` never hardcodes `/usr/ports`. It resolves the ports tree via `--ports-dir` / `-P`, `$KRYX_PORTS_DIR`, `$KPM_PORTS_DIR`, `kpm.ini`, or workspace auto-detection (`./ports`, `./pkg-tools`, `./kernel`, `./core`, `./Pkgfile`):
+`kryx-src` never hardcodes `/usr/ports`. It resolves the ports tree via `--ports-dir` / `-P`, `$KRYX_PORTS_DIR`, `$KPM_PORTS_DIR`, `kpm.ini`, or workspace auto-detection (`./ports`, `./kpm-tools`, `./kernel`, `./system`, `./core`, `./Pkgfile`):
 
 ```sh
 kryx-src lint --ports-dir ./ports
-kryx-src plan --ports-dir ./ports --max-ports 20 --compact pkg-tools/kpm
-kryx-src pkg --ports-dir ./ports --work-root /tmp/work --out-dir ./dist --deps --sync-index pkg-tools/kpm
+kryx-src plan --ports-dir ./ports --max-ports 20 --compact kpm-tools/kpm
+kryx-src pkg --ports-dir ./ports --work-root /tmp/work --out-dir ./dist --deps --sync-index kpm-tools/kpm
 kryx-src stage --packages ./dist --ports-dir ./ports --index ./dist/index.json --upload-dir ./dist/upload
 kryx-src sign --signify --key ./kryx-release.sec --file ./dist/index.json
 ```

@@ -16,7 +16,7 @@
           "description": "KryX Package Manager — binary-first CRUX package manager with integrated pure-Go ports syncer and 100% pkgutils parity",
           "depends": ["glibc", "libarchive", "zstd"],
           "makedepends": ["go"],
-          "collection": "pkg-tools"
+          "collection": "kpm-tools"
         }
       ]
     },
@@ -92,7 +92,7 @@
           "description": "General-purpose programming language and toolchain",
           "depends": ["glibc"],
           "makedepends": [],
-          "collection": "pkg-tools"
+          "collection": "kpm-tools"
         }
       ]
     },

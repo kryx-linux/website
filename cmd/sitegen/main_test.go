@@ -91,7 +91,7 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 		"packages/kpm.html",
 		"packages/wlroots.html",
 		"ports/index.html",
-		"ports/pkg-tools/index.html",
+		"ports/kpm-tools/index.html",
 		"man/index.html",
 		"man/kpm.8.html",
 		"man/kpm-index.8.html",
@@ -176,15 +176,15 @@ func TestDiscoverPortsSiblingReposAndTarGz(t *testing.T) {
 		}
 	}
 
-	writePkg("ports/pkg-tools/kpm/Pkgfile", "# Description: kpm\nname=kpm\nversion=0.6.0\nrelease=1\n")
+	writePkg("ports/kpm-tools/kpm/Pkgfile", "# Description: kpm\nname=kpm\nversion=0.6.0\nrelease=1\n")
 	writePkg("ports/kernel/linux6.18/Pkgfile", "# Description: kernel\nname=kernel\nversion=6.18.64\nrelease=2\n")
 	writePkg("core/zlib/Pkgfile", "# Description: zlib\nname=zlib\nversion=1.4\nrelease=1\n")
 	writePkg("opt/grub2/Pkgfile", "# Description: grub2\nname=grub2\nversion=2.16\nrelease=1\n")
 
 	byCol, byName := DiscoverPorts(filepath.Join(ws, "ports"), RepoIndex{}, true)
-	if len(byCol["pkg-tools"]) != 1 || len(byCol["kernel"]) != 1 || len(byCol["core"]) != 1 || len(byCol["opt"]) != 1 {
-		t.Fatalf("unexpected sibling discovery counts: pkg-tools=%d kernel=%d core=%d opt=%d",
-			len(byCol["pkg-tools"]), len(byCol["kernel"]), len(byCol["core"]), len(byCol["opt"]))
+	if len(byCol["kpm-tools"]) != 1 || len(byCol["kernel"]) != 1 || len(byCol["core"]) != 1 || len(byCol["opt"]) != 1 {
+		t.Fatalf("unexpected sibling discovery counts: kpm-tools=%d kernel=%d core=%d opt=%d",
+			len(byCol["kpm-tools"]), len(byCol["kernel"]), len(byCol["core"]), len(byCol["opt"]))
 	}
 	if byName["kernel"].Collection != "kernel" || byName["zlib"].Collection != "core" {
 		t.Fatalf("unexpected collection mapping: %+v", byName)
@@ -223,12 +223,12 @@ func TestDiscoverPortsSiblingReposAndTarGz(t *testing.T) {
 	}
 
 	metaTar := makeTarGz(map[string]string{
-		"ports-main/pkg-tools/kpm/Pkgfile":      "# Description: kpm\nname=kpm\nversion=0.6.0\nrelease=1\n",
+		"ports-main/kpm-tools/kpm/Pkgfile":      "# Description: kpm\nname=kpm\nversion=0.6.0\nrelease=1\n",
 		"ports-main/kernel/linux6.18/Pkgfile":   "# Description: kernel\nname=kernel\nversion=6.18.64\nrelease=2\n",
 		"ports-main/ignored/foo/Pkgfile":        "# Description: skip\nname=foo\nversion=1\nrelease=1\n",
 	})
-	gotMeta, err := extractPortsFromTarGz(metaTar, "", map[string]bool{"pkg-tools": true, "kernel": true})
-	if err != nil || len(gotMeta["pkg-tools"]) != 1 || len(gotMeta["kernel"]) != 1 || len(gotMeta["ignored"]) != 0 {
+	gotMeta, err := extractPortsFromTarGz(metaTar, "", map[string]bool{"kpm-tools": true, "kernel": true})
+	if err != nil || len(gotMeta["kpm-tools"]) != 1 || len(gotMeta["kernel"]) != 1 || len(gotMeta["ignored"]) != 0 {
 		t.Fatalf("extractPortsFromTarGz(meta) failed: got=%+v err=%v", gotMeta, err)
 	}
 }

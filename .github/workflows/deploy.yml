@@ -66,7 +66,7 @@ jobs:
           done
 
           git clone --depth 1 https://github.com/kryx-linux/ports.git _ports_meta
-          for col in pkg-tools kernel; do
+          for col in kpm-tools kernel system; do
             if [ -d "_ports_meta/${col}" ]; then
               cp -a "_ports_meta/${col}" "_ports/${col}"
             fi
@@ -74,7 +74,7 @@ jobs:
           rm -rf _ports_meta
 
           echo "=== Cloned port counts ==="
-          for col in pkg-tools kernel core opt xorg contrib compat-32; do
+          for col in kpm-tools kernel system core opt xorg contrib compat-32; do
             cnt="$(find "_ports/${col}" -maxdepth 2 -name Pkgfile 2>/dev/null | wc -l)"
             echo "${col}: ${cnt}"
             if [ "$cnt" -eq 0 ]; then

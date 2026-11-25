@@ -17,7 +17,7 @@ Override the active configuration file with `kpm --config <file>` or `KPM_CONFIG
 [paths]
 root = /
 ports_dir = /usr/ports
-collections = pkg-tools, kernel, core, opt, xorg, contrib
+collections = kpm-tools, kernel, system, core, opt, xorg, contrib, compat-32
 cache_dir = /var/cache/kpm
 source_cache = /var/cache/kpm/sources
 package_dir = /var/cache/kpm/packages
