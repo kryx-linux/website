@@ -68,11 +68,12 @@ verify_index_signature = true
 Drop additional overlays in `/etc/ports/sources.list.d/*.list` (legacy `/etc/gports/sources.list` is still read automatically as a fallback if `/etc/ports/sources.list` does not exist):
 
 ```text
-git kryx    https://github.com/kryx-linux/ports.git
-git core    https://github.com/kryx-linux/core.git
-git opt     https://github.com/kryx-linux/opt.git
-git xorg    https://github.com/kryx-linux/xorg.git
-git contrib https://github.com/kryx-linux/contrib.git
+git kryx      https://github.com/kryx-linux/ports.git
+git core      https://github.com/kryx-linux/core.git
+git opt       https://github.com/kryx-linux/opt.git
+git xorg      https://github.com/kryx-linux/xorg.git
+git contrib   https://github.com/kryx-linux/contrib.git
+git compat-32 https://github.com/kryx-linux/compat-32.git
 ```
 
 ## `/etc/pkgadd.conf`

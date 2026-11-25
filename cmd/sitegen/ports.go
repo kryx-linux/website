@@ -40,7 +40,7 @@ func (p PortRecipe) FullVersion() string {
 	return p.Version + "-" + p.Release
 }
 
-var portCollectionsOrder = []string{"pkg-tools", "kernel", "core", "opt", "xorg", "contrib"}
+var portCollectionsOrder = []string{"pkg-tools", "kernel", "core", "opt", "xorg", "contrib", "compat-32"}
 
 var collectionDescriptions = map[string]string{
 	"pkg-tools": "KryX Linux first-party package manager & toolchain ports (kpm with integrated ports, zig)",
@@ -49,6 +49,7 @@ var collectionDescriptions = map[string]string{
 	"opt":       "Optional system utilities, GRUB bootloaders, Wayland stack, and applications",
 	"xorg":      "X.Org libraries, Wayland/DRM compatibility, fonts, and graphics drivers",
 	"contrib":   "Community-maintained third-party CRUX/KryX ports",
+	"compat-32": "32-bit multilib compatibility libraries for Steam, Wine, and legacy x86 software",
 }
 
 // normalizeCollection maps legacy collection names (like "rolling") onto active KryX collections.
