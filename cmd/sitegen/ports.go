@@ -40,11 +40,12 @@ func (p PortRecipe) FullVersion() string {
 	return p.Version + "-" + p.Release
 }
 
-var portCollectionsOrder = []string{"pkg-tools", "kernel", "core", "opt", "xorg", "contrib", "compat-32"}
+var portCollectionsOrder = []string{"pkg-tools", "kernel", "system", "core", "opt", "xorg", "contrib", "compat-32"}
 
 var collectionDescriptions = map[string]string{
 	"pkg-tools": "KryX Linux first-party package manager & toolchain ports (kpm with integrated ports, zig)",
 	"kernel":    "KryX Linux rolling LTS kernel recipes (linux6.18)",
+	"system":    "KryX Linux first-party system & init ports (dinit, dinit-kryx, turnstile)",
 	"core":      "Essential CRUX 3.8-derived base system, toolchain, and runtime libraries",
 	"opt":       "Optional system utilities, GRUB bootloaders, Wayland stack, and applications",
 	"xorg":      "X.Org libraries, Wayland/DRM compatibility, fonts, and graphics drivers",
@@ -178,7 +179,7 @@ func fetchMissingCollections(missing []string) map[string][]PortRecipe {
 
 	for _, col := range missing {
 		switch col {
-		case "pkg-tools", "kernel":
+		case "pkg-tools", "kernel", "system":
 			needMetaPorts = true
 			metaWant[col] = true
 		default:

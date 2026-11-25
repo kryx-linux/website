@@ -54,7 +54,10 @@ or collection directories
 .IR ./opt ,
 .IR ./xorg ,
 .IR ./contrib ,
-.IR ./rolling )
+.IR ./compat\-32 ,
+.IR ./pkg\-tools ,
+.IR ./kernel ,
+.IR ./system )
 .IP 5. 4
 Fallback to
 .I /usr/ports
@@ -130,7 +133,7 @@ and verify that every built archive resolves to an uploaded asset URL.
 .PP
 .nf
 kryx\-src lint \-\-ports\-dir /workspace/ports
-kryx\-src plan \-\-ports\-dir /workspace/ports \-\-compact rolling/kpm
+kryx\-src plan \-\-ports\-dir /workspace/ports \-\-compact pkg\-tools/kpm system/dinit
 kryx\-src pkg \-\-ports\-dir ./ports \-\-work\-root /tmp/work \-\-out\-dir ./dist/packages \-\-deps \-\-force linux\-6.18
 kryx\-src stage \-\-packages ./dist/packages \-\-ports\-dir ./ports \-\-index ./stage/index.json \-\-upload\-dir ./stage/upload
 kryx\-src sign \-\-signify \-\-key ./release.sec \-\-file ./stage/index.json
