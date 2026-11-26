@@ -130,7 +130,7 @@ func GeneratePackagesPages(outDir string, site SiteContext, idx RepoIndex, ports
 
 	var indexBody strings.Builder
 	indexBody.WriteString("<h1>Binary Packages</h1>\n")
-	fmt.Fprintf(&indexBody, "<p class=\"meta-note\">%d package(s) indexed in <code>rolling-x86_64</code>. Plain-text index: <a href=\"/packages.txt\">/packages.txt</a>.</p>\n", len(names))
+	fmt.Fprintf(&indexBody, "<p class=\"meta-note\">%d package(s) indexed in <code>rolling-x86_64</code>. Plain-text index: <a href=\"/packages.txt\">/packages.txt</a> &middot; <a href=\"/browse?kind=prebuilt\">Filter &amp; paginate</a> &middot; <a href=\"/deps/\">Dependency explorer</a>.</p>\n", len(names))
 	indexBody.WriteString("<p>Install any package binary-first with <code>kpm install --deps &lt;package&gt;</code> after running <code>kpm sync</code>.</p>\n")
 	indexBody.WriteString(renderSearchForm("", "packages", "Search binary packages..."))
 	indexBody.WriteString(renderAlphaJumpBar(lettersPresent))
@@ -228,6 +228,12 @@ func GeneratePackagesPages(outDir string, site SiteContext, idx RepoIndex, ports
 		if latest.URL != "" {
 			fmt.Fprintf(&body, "<tr><th>Binary Archive</th><td><a href=\"%s\">%s</a></td></tr>\n", html.EscapeString(latest.URL), html.EscapeString(latest.Filename))
 		}
+		if hasPort {
+			fmt.Fprintf(&body, "<tr><th>Port Recipe</th><td><a href=\"/ports/%s/%s.html\">%s</a></td></tr>\n",
+				html.EscapeString(portRec.Collection), html.EscapeString(portRec.DirName), html.EscapeString(portRec.RelPath))
+		}
+		fmt.Fprintf(&body, "<tr><th>Dependency Graph</th><td><a href=\"/deps?pkg=%s\">Dependency tree</a> &middot; <a href=\"/deps?pkg=%s&amp;mode=why\">Required By (why)</a> &middot; <a href=\"/deps?pkg=%s&amp;format=dot\">DOT</a></td></tr>\n",
+			html.EscapeString(name), html.EscapeString(name), html.EscapeString(name))
 		body.WriteString("</tbody>\n</table>\n</div>\n")
 
 		deps := latest.Depends

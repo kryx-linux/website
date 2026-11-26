@@ -91,6 +91,7 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
   <link rel="canonical" href="%s">
   <link rel="icon" type="image/svg+xml" href="/kryx.svg">
   <link rel="alternate" type="application/rss+xml" title="KryX Linux News" href="/feed.xml">
+  <link rel="search" type="application/opensearchdescription+xml" title="KryX Linux" href="/opensearch.xml">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -115,6 +116,8 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
     <div class="footer-inner">
       <div class="footer-links">
         <a href="/search/">Search</a>
+        <a href="/browse">Browse</a>
+        <a href="/deps/">Deps</a>
         <a href="/man/">Man Pages</a>
         <a href="/install.txt">install.txt</a>
         <a href="/SHA256SUMS.txt">SHA256SUMS.txt</a>
@@ -124,7 +127,10 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
         <a href="/feed.xml">RSS Feed</a>
         <a href="https://github.com/kryx-linux">GitHub</a>
       </div>
-      <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of client-side JavaScript &middot; built %s UTC.</p>
+      <div class="footer-meta">
+        <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of client-side JavaScript &middot; built %s UTC.</p>
+        <p class="theme-switcher">Theme: <a href="/theme?mode=auto&amp;next=%s">Auto</a> &middot; <a href="/theme?mode=light&amp;next=%s">Light</a> &middot; <a href="/theme?mode=dark&amp;next=%s">Dark</a></p>
+      </div>
     </div>
   </footer>
 </body>
@@ -136,6 +142,9 @@ func renderPageShell(site SiteContext, meta PageMeta, mainHTML string) string {
 		nav.String(),
 		mainHTML,
 		site.BuildTime.UTC().Format("2006-01-02 15:04"),
+		html.EscapeString(defaultStr(meta.Canonical, "/")),
+		html.EscapeString(defaultStr(meta.Canonical, "/")),
+		html.EscapeString(defaultStr(meta.Canonical, "/")),
 	)
 }
 
@@ -375,6 +384,7 @@ func renderHomePage(rel ReleaseInfo, idx RepoIndex, portsByCol map[string][]Port
 	fmt.Fprintf(&sb, "        <li>Channel: <code>rolling-x86_64</code> (%s)</li>\n", html.EscapeString(rel.Version))
 	fmt.Fprintf(&sb, "        <li>Binary packages: <a href=\"/packages/\">%d indexed</a> (<a href=\"/packages.txt\">txt</a>)</li>\n", len(idx.Packages))
 	fmt.Fprintf(&sb, "        <li>Port recipes: <a href=\"/ports/\">%d across %d collections</a> (<a href=\"/ports.txt\">txt</a>)</li>\n", totalPorts, len(portCollectionsOrder))
+	sb.WriteString("        <li>Tools: <a href=\"/browse\">Filter &amp; Browse</a> &middot; <a href=\"/deps/\">Dependency Explorer</a></li>\n")
 	sb.WriteString("        <li>Documentation: <a href=\"/docs/\">Handbook</a> &middot; <a href=\"/man/\">Man Pages</a></li>\n")
 	sb.WriteString("        <li>Signing key: <a href=\"/kryx-release.pub\">kryx-release.pub</a> (<a href=\"/status/\">verify</a>)</li>\n")
 	sb.WriteString("      </ul>\n")

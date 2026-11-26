@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -123,17 +126,10 @@ func BuildSearchIndex(idx RepoIndex, portsByCol map[string][]PortRecipe, portsBy
 		})
 	}
 
-	// 2. Ports recipes (every collection)
+	// 2. Ports recipes (every collection now has its own static detail page)
 	for _, col := range portCollectionsOrder {
 		for _, p := range portsByCol[col] {
-			_, hasBin := idx.Packages[p.Name]
-			isFirstParty := col == "kpm-tools" || col == "kernel" || col == "system"
-			u := fmt.Sprintf("/ports/%s/#letter-%s", col, alphaBucket(p.Name))
-			if hasBin {
-				u = "/packages/" + p.Name + ".html"
-			} else if isFirstParty && p.RawPkgfile != "" {
-				u = fmt.Sprintf("/ports/%s/%s.html", col, p.DirName)
-			}
+			u := fmt.Sprintf("/ports/%s/%s.html", col, p.DirName)
 			entries = append(entries, SearchEntry{
 				Kind:        "port",
 				Name:        p.Name,
@@ -334,13 +330,18 @@ func entryMatchesScope(kind, scope string) bool {
 }
 
 // NewSiteHandler returns an http.Handler serving static files from outDir plus
-// server-side zero-JS search on /search (matching functions/search.js on Cloudflare Pages).
+// server-side zero-JS /search, /browse, /deps, and /theme handlers (matching
+// website/functions/*.js on Cloudflare Pages).
 func NewSiteHandler(outDir string, site SiteContext) http.Handler {
 	fileServer := http.FileServer(http.Dir(outDir))
 	var (
 		loadOnce sync.Once
 		entries  []SearchEntry
 		loadErr  error
+
+		depsOnce  sync.Once
+		depsGraph map[string]DepNode
+		depsErr   error
 	)
 	loadIndex := func() ([]SearchEntry, error) {
 		loadOnce.Do(func() {
@@ -352,6 +353,17 @@ func NewSiteHandler(outDir string, site SiteContext) http.Handler {
 			loadErr = json.Unmarshal(raw, &entries)
 		})
 		return entries, loadErr
+	}
+	loadDeps := func() (map[string]DepNode, error) {
+		depsOnce.Do(func() {
+			raw, err := os.ReadFile(filepath.Join(outDir, "deps-graph.json"))
+			if err != nil {
+				depsErr = err
+				return
+			}
+			depsErr = json.Unmarshal(raw, &depsGraph)
+		})
+		return depsGraph, depsErr
 	}
 
 	mux := http.NewServeMux()
@@ -397,7 +409,7 @@ func NewSiteHandler(outDir string, site SiteContext) http.Handler {
 		if total == 0 {
 			fmt.Fprintf(&body, "<p>No results found for <code>%s</code> in scope <code>%s</code>.</p>\n",
 				html.EscapeString(q), html.EscapeString(scope))
-			body.WriteString("<p class=\"meta-note\">Try fewer keywords, switch scope to <em>All</em>, or browse <a href=\"/packages/\">/packages/</a> and <a href=\"/ports/\">/ports/</a>.</p>\n")
+			body.WriteString("<p class=\"meta-note\">Try fewer keywords, switch scope to <em>All</em>, or browse <a href=\"/browse\">/browse</a>, <a href=\"/packages/\">/packages/</a>, and <a href=\"/ports/\">/ports/</a>.</p>\n")
 		} else {
 			if total > len(shown) {
 				fmt.Fprintf(&body, "<p class=\"meta-note\">Showing top %d of %d matches for <code>%s</code> (scope: <code>%s</code>).</p>\n",
@@ -437,8 +449,386 @@ func NewSiteHandler(outDir string, site SiteContext) http.Handler {
 		}, body.String())))
 	}
 
+	handleBrowse := func(w http.ResponseWriter, r *http.Request) {
+		serveBrowseRequest(w, r, site, loadIndex)
+	}
+	handleDeps := func(w http.ResponseWriter, r *http.Request) {
+		serveDepsRequest(w, r, outDir, site, loadDeps)
+	}
+
 	mux.HandleFunc("/search", handleSearch)
 	mux.HandleFunc("/search/", handleSearch)
+	mux.HandleFunc("/browse", handleBrowse)
+	mux.HandleFunc("/browse/", handleBrowse)
+	mux.HandleFunc("/deps", handleDeps)
+	mux.HandleFunc("/deps/", handleDeps)
+	mux.HandleFunc("/theme", serveThemeRequest)
+	mux.HandleFunc("/theme/", serveThemeRequest)
 	mux.Handle("/", fileServer)
-	return mux
+	return withThemeMiddleware(mux)
+}
+
+type browseItem struct {
+	Name        string
+	Version     string
+	Collection  string
+	Description string
+	Prebuilt    bool
+	URL         string
+	PortURL     string
+}
+
+func buildBrowseCatalog(entries []SearchEntry) []browseItem {
+	byName := make(map[string]*browseItem, len(entries))
+	for _, e := range entries {
+		if e.Kind != "port" {
+			continue
+		}
+		if _, exists := byName[e.Name]; exists {
+			continue
+		}
+		byName[e.Name] = &browseItem{
+			Name:        e.Name,
+			Version:     e.Version,
+			Collection:  e.Collection,
+			Description: e.Description,
+			Prebuilt:    false,
+			URL:         e.URL,
+			PortURL:     e.URL,
+		}
+	}
+	for _, e := range entries {
+		if e.Kind != "package" {
+			continue
+		}
+		if cur, exists := byName[e.Name]; exists {
+			cur.Prebuilt = true
+			cur.URL = e.URL
+			if e.Version != "" {
+				cur.Version = e.Version
+			}
+			if e.Collection != "" && cur.Collection == "" {
+				cur.Collection = e.Collection
+			}
+			if e.Description != "" && cur.Description == "" {
+				cur.Description = e.Description
+			}
+		} else {
+			byName[e.Name] = &browseItem{
+				Name:        e.Name,
+				Version:     e.Version,
+				Collection:  e.Collection,
+				Description: e.Description,
+				Prebuilt:    true,
+				URL:         e.URL,
+			}
+		}
+	}
+	items := make([]browseItem, 0, len(byName))
+	for _, it := range byName {
+		items = append(items, *it)
+	}
+	return items
+}
+
+func serveBrowseRequest(w http.ResponseWriter, r *http.Request, site SiteContext, loadIndex func() ([]SearchEntry, error)) {
+	idxEntries, err := loadIndex()
+	if err != nil {
+		http.Error(w, "catalog unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	qp := r.URL.Query()
+	col := strings.TrimSpace(qp.Get("col"))
+	kind := strings.ToLower(strings.TrimSpace(qp.Get("kind")))
+	if kind != "prebuilt" && kind != "source" {
+		kind = "all"
+	}
+	sortBy := strings.ToLower(strings.TrimSpace(qp.Get("sort")))
+	if sortBy != "col" && sortBy != "version" {
+		sortBy = "name"
+	}
+	q := strings.TrimSpace(qp.Get("q"))
+	format := strings.ToLower(strings.TrimSpace(qp.Get("format")))
+
+	per := 50
+	if rawPer, err := strconv.Atoi(strings.TrimSpace(qp.Get("per"))); err == nil && rawPer >= 10 && rawPer <= 200 {
+		per = rawPer
+	}
+	page := 1
+	if rawPage, err := strconv.Atoi(strings.TrimSpace(qp.Get("page"))); err == nil && rawPage > 0 {
+		page = rawPage
+	}
+
+	tokens := strings.Fields(strings.ToLower(q))
+	catalog := buildBrowseCatalog(idxEntries)
+	filtered := make([]browseItem, 0, len(catalog))
+	for _, it := range catalog {
+		if col != "" && it.Collection != col {
+			continue
+		}
+		if kind == "prebuilt" && !it.Prebuilt {
+			continue
+		}
+		if kind == "source" && it.Prebuilt {
+			continue
+		}
+		if len(tokens) > 0 {
+			hay := strings.ToLower(it.Name + " " + it.Collection + " " + it.Description)
+			ok := true
+			for _, tok := range tokens {
+				if !strings.Contains(hay, tok) {
+					ok = false
+					break
+				}
+			}
+			if !ok {
+				continue
+			}
+		}
+		filtered = append(filtered, it)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		switch sortBy {
+		case "col":
+			if filtered[i].Collection != filtered[j].Collection {
+				return filtered[i].Collection < filtered[j].Collection
+			}
+		case "version":
+			if filtered[i].Version != filtered[j].Version {
+				return filtered[i].Version > filtered[j].Version
+			}
+		}
+		return filtered[i].Name < filtered[j].Name
+	})
+
+	if format == "txt" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintf(w, "# KryX Linux browse: col=%q kind=%s sort=%s q=%q (%d item(s))\n", col, kind, sortBy, q, len(filtered))
+		for _, it := range filtered {
+			status := "source"
+			if it.Prebuilt {
+				status = "prebuilt"
+			}
+			fmt.Fprintf(w, "%-8s %-10s %-26s %-16s %s%s\n",
+				status, defaultStr(it.Collection, "-"), it.Name, defaultStr(it.Version, "-"),
+				strings.TrimRight(site.SiteURL, "/"), it.URL)
+		}
+		return
+	}
+
+	total := len(filtered)
+	totalPages := (total + per - 1) / per
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	start := (page - 1) * per
+	end := start + per
+	if end > total {
+		end = total
+	}
+	slice := filtered[start:end]
+
+	buildBrowseURL := func(p int, extraFormat string) string {
+		v := url.Values{}
+		if col != "" {
+			v.Set("col", col)
+		}
+		if kind != "all" {
+			v.Set("kind", kind)
+		}
+		if sortBy != "name" {
+			v.Set("sort", sortBy)
+		}
+		if q != "" {
+			v.Set("q", q)
+		}
+		if per != 50 {
+			v.Set("per", strconv.Itoa(per))
+		}
+		if p > 1 {
+			v.Set("page", strconv.Itoa(p))
+		}
+		if extraFormat != "" {
+			v.Set("format", extraFormat)
+		}
+		if enc := v.Encode(); enc != "" {
+			return "/browse?" + enc
+		}
+		return "/browse"
+	}
+
+	var body strings.Builder
+	body.WriteString("<h1>Browse Packages &amp; Ports</h1>\n")
+	body.WriteString("<p class=\"meta-note\">Zero-JavaScript server-side filter across all prebuilt binary packages and source ports. Works natively in <code>lynx</code>, <code>w3m</code>, <code>links</code>, and <code>curl</code>.</p>\n")
+
+	body.WriteString("<form class=\"filter-bar\" action=\"/browse\" method=\"get\" role=\"search\">\n")
+	body.WriteString("  <label class=\"sr-only\" for=\"b-q\">Filter query</label>\n")
+	fmt.Fprintf(&body, "  <input id=\"b-q\" type=\"search\" name=\"q\" value=\"%s\" placeholder=\"Filter by name or description...\">\n", html.EscapeString(q))
+	body.WriteString("  <label class=\"sr-only\" for=\"b-col\">Collection</label>\n")
+	body.WriteString("  <select id=\"b-col\" name=\"col\">\n")
+	body.WriteString("    <option value=\"\">All collections</option>\n")
+	for _, c := range portCollectionsOrder {
+		sel := ""
+		if c == col {
+			sel = " selected"
+		}
+		fmt.Fprintf(&body, "    <option value=\"%s\"%s>%s</option>\n", html.EscapeString(c), sel, html.EscapeString(c))
+	}
+	body.WriteString("  </select>\n")
+	body.WriteString("  <label class=\"sr-only\" for=\"b-kind\">Availability</label>\n")
+	body.WriteString("  <select id=\"b-kind\" name=\"kind\">\n")
+	for _, opt := range [][2]string{{"all", "All (binary + source)"}, {"prebuilt", "Prebuilt binary only"}, {"source", "Source port only"}} {
+		sel := ""
+		if opt[0] == kind {
+			sel = " selected"
+		}
+		fmt.Fprintf(&body, "    <option value=\"%s\"%s>%s</option>\n", opt[0], sel, opt[1])
+	}
+	body.WriteString("  </select>\n")
+	body.WriteString("  <label class=\"sr-only\" for=\"b-sort\">Sort order</label>\n")
+	body.WriteString("  <select id=\"b-sort\" name=\"sort\">\n")
+	for _, opt := range [][2]string{{"name", "Sort: Name"}, {"col", "Sort: Collection"}, {"version", "Sort: Version"}} {
+		sel := ""
+		if opt[0] == sortBy {
+			sel = " selected"
+		}
+		fmt.Fprintf(&body, "    <option value=\"%s\"%s>%s</option>\n", opt[0], sel, opt[1])
+	}
+	body.WriteString("  </select>\n")
+	body.WriteString("  <button type=\"submit\">Filter</button>\n")
+	body.WriteString("</form>\n")
+
+	fmt.Fprintf(&body, "<p class=\"meta-note\">%d matching item(s) &middot; page %d of %d &middot; <a href=\"%s\">Plain text (curl)</a> &middot; <a href=\"/browse\">Reset</a></p>\n",
+		total, page, totalPages, html.EscapeString(buildBrowseURL(1, "txt")))
+
+	if total == 0 {
+		body.WriteString("<p>No packages or ports matched the active filter.</p>\n")
+	} else {
+		body.WriteString("<div class=\"table-wrap\">\n<table>\n<thead>\n<tr><th>Name</th><th>Version</th><th>Collection</th><th>Status</th><th>Description</th><th>Graph</th></tr>\n</thead>\n<tbody>\n")
+		for _, it := range slice {
+			statusTag := `<span class="kind-tag">source</span>`
+			if it.Prebuilt {
+				statusTag = `<span class="badge-ok">prebuilt</span>`
+			}
+			colCell := "—"
+			if it.Collection != "" {
+				colCell = fmt.Sprintf("<a href=\"/browse?col=%s\">%s</a>", html.EscapeString(it.Collection), html.EscapeString(it.Collection))
+			}
+			fmt.Fprintf(&body, "<tr><td><a href=\"%s\">%s</a></td><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td><td><a href=\"/deps?pkg=%s\">deps</a></td></tr>\n",
+				html.EscapeString(it.URL),
+				html.EscapeString(it.Name),
+				html.EscapeString(defaultStr(it.Version, "—")),
+				colCell,
+				statusTag,
+				html.EscapeString(it.Description),
+				html.EscapeString(it.Name),
+			)
+		}
+		body.WriteString("</tbody>\n</table>\n</div>\n")
+
+		if totalPages > 1 {
+			body.WriteString("<nav class=\"pagination\" aria-label=\"Pagination\">\n")
+			if page > 1 {
+				fmt.Fprintf(&body, "  <a class=\"btn\" href=\"%s\">&larr; Previous</a>\n", html.EscapeString(buildBrowseURL(page-1, "")))
+			} else {
+				body.WriteString("  <span class=\"page-disabled\">&larr; Previous</span>\n")
+			}
+			fmt.Fprintf(&body, "  <span class=\"page-info\">Page %d of %d</span>\n", page, totalPages)
+			if page < totalPages {
+				fmt.Fprintf(&body, "  <a class=\"btn\" href=\"%s\">Next &rarr;</a>\n", html.EscapeString(buildBrowseURL(page+1, "")))
+			} else {
+				body.WriteString("  <span class=\"page-disabled\">Next &rarr;</span>\n")
+			}
+			body.WriteString("</nav>\n")
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(renderPageShell(site, PageMeta{
+		Title:       "Browse Packages & Ports",
+		Description: "Filter and paginate KryX Linux binary packages and source ports without JavaScript.",
+		ActiveNav:   "packages",
+		Canonical:   "/browse",
+	}, body.String())))
+}
+
+func safeNextPath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+		return "/"
+	}
+	if strings.ContainsAny(raw, "\r\n\\") {
+		return "/"
+	}
+	return raw
+}
+
+func serveThemeRequest(w http.ResponseWriter, r *http.Request) {
+	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+	next := safeNextPath(r.URL.Query().Get("next"))
+	switch mode {
+	case "light", "dark":
+		http.SetCookie(w, &http.Cookie{
+			Name:     "kryx_theme",
+			Value:    mode,
+			Path:     "/",
+			MaxAge:   31536000,
+			SameSite: http.SameSiteLaxMode,
+		})
+	default:
+		http.SetCookie(w, &http.Cookie{
+			Name:     "kryx_theme",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+	http.Redirect(w, r, next, http.StatusFound)
+}
+
+type themeCaptureWriter struct {
+	header http.Header
+	code   int
+	buf    bytes.Buffer
+}
+
+func (tw *themeCaptureWriter) Header() http.Header         { return tw.header }
+func (tw *themeCaptureWriter) WriteHeader(statusCode int)  { tw.code = statusCode }
+func (tw *themeCaptureWriter) Write(p []byte) (int, error) { return tw.buf.Write(p) }
+
+func withThemeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("kryx_theme")
+		if err != nil || (cookie.Value != "light" && cookie.Value != "dark") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		theme := cookie.Value
+		cw := &themeCaptureWriter{header: make(http.Header), code: http.StatusOK}
+		next.ServeHTTP(cw, r)
+
+		for k, vals := range cw.header {
+			if strings.EqualFold(k, "Content-Length") {
+				continue
+			}
+			for _, v := range vals {
+				w.Header().Add(k, v)
+			}
+		}
+		w.Header().Add("Vary", "Cookie")
+
+		payload := cw.buf.Bytes()
+		ct := cw.header.Get("Content-Type")
+		if strings.Contains(strings.ToLower(ct), "text/html") {
+			payload = bytes.Replace(payload, []byte(`<html lang="en">`), []byte(`<html lang="en" data-theme="`+theme+`">`), 1)
+		}
+		w.WriteHeader(cw.code)
+		_, _ = w.Write(payload)
+	})
 }

@@ -3,25 +3,9 @@
 // Works natively with HTML <form method="get" action="/search"> in lynx, w3m,
 // links, curl (?format=txt), and all graphical browsers.
 
+import { SITE_URL, VALID_SCOPES, escapeHTML, renderPage } from "./_shared.js";
+
 let cachedIndex = null;
-
-const VALID_SCOPES = [
-  ["all", "All"],
-  ["packages", "Packages"],
-  ["ports", "Ports"],
-  ["docs", "Handbook"],
-  ["man", "Man Pages"],
-  ["news", "News"],
-];
-
-function escapeHTML(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function normalizeScope(raw) {
   switch (String(raw || "").trim().toLowerCase()) {
@@ -128,65 +112,6 @@ ${opts}
 </form>`;
 }
 
-function renderPage(title, bodyHTML) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHTML(title)} — KryX Linux</title>
-  <meta name="description" content="Zero-JavaScript server-side search across KryX Linux packages, ports, Handbook guides, and man pages.">
-  <link rel="canonical" href="https://kryx.anrix.org/search/">
-  <link rel="icon" type="image/svg+xml" href="/kryx.svg">
-  <link rel="alternate" type="application/rss+xml" title="KryX Linux News" href="/feed.xml">
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-  <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header">
-    <div class="header-inner">
-      <div class="brand-row">
-        <a class="brand-link" href="/">
-          <img class="brand-logo" src="/kryx.svg" alt="" width="24" height="21">
-          <span>KryX Linux</span>
-        </a>
-      </div>
-      <nav class="site-nav" aria-label="Primary">
-        <a href="/">Home</a>
-        <a href="/download/">Download</a>
-        <a href="/docs/">Docs</a>
-        <a href="/packages/">Packages</a>
-        <a href="/ports/">Ports</a>
-        <a href="/news/">News</a>
-        <a href="/status/">Status</a>
-        <a href="https://github.com/kryx-linux">GitHub</a>
-      </nav>
-    </div>
-  </header>
-  <main id="main">
-${bodyHTML}
-  </main>
-  <footer class="site-footer">
-    <div class="footer-inner">
-      <div class="footer-links">
-        <a href="/search/">Search</a>
-        <a href="/man/">Man Pages</a>
-        <a href="/install.txt">install.txt</a>
-        <a href="/SHA256SUMS.txt">SHA256SUMS.txt</a>
-        <a href="/kryx-release.pub">kryx-release.pub</a>
-        <a href="/packages.txt">packages.txt</a>
-        <a href="/ports.txt">ports.txt</a>
-        <a href="/feed.xml">RSS Feed</a>
-        <a href="https://github.com/kryx-linux">GitHub</a>
-      </div>
-      <p>KryX Linux &mdash; licensed under <a href="https://github.com/kryx-linux/website/blob/main/LICENSE">GPL-3.0</a> &middot; 0 bytes of client-side JavaScript.</p>
-    </div>
-  </footer>
-</body>
-</html>
-`;
-}
-
 async function loadIndex(context) {
   if (cachedIndex) return cachedIndex;
   const assetURL = new URL("/search-index.json", context.request.url);
@@ -212,7 +137,7 @@ export async function onRequestGet(context) {
   let entries;
   try {
     entries = await loadIndex(context);
-  } catch (err) {
+  } catch {
     return new Response("Search index temporarily unavailable.", {
       status: 500,
       headers: { "content-type": "text/plain; charset=utf-8" },
@@ -232,7 +157,7 @@ export async function onRequestGet(context) {
       const kind = (e.k || "-").padEnd(8);
       const name = (e.n || "-").padEnd(24);
       const ver = (e.v || "-").padEnd(14);
-      lines.push(`${kind} ${col} ${name} ${ver} https://kryx.anrix.org${e.u}`);
+      lines.push(`${kind} ${col} ${name} ${ver} ${SITE_URL}${e.u}`);
     }
     return new Response(lines.join("\n") + "\n", {
       headers: {
@@ -245,7 +170,7 @@ export async function onRequestGet(context) {
   let body = `<h1>Search KryX Linux</h1>\n${renderSearchForm(q, scope)}\n`;
   if (total === 0) {
     body += `<p>No results found for <code>${escapeHTML(q)}</code> in scope <code>${escapeHTML(scope)}</code>.</p>\n`;
-    body += `<p class="meta-note">Try fewer keywords, switch scope to <em>All</em>, or browse <a href="/packages/">/packages/</a> and <a href="/ports/">/ports/</a>.</p>\n`;
+    body += `<p class="meta-note">Try fewer keywords, switch scope to <em>All</em>, or browse <a href="/browse">/browse</a>, <a href="/packages/">/packages/</a>, and <a href="/ports/">/ports/</a>.</p>\n`;
   } else {
     if (total > shown.length) {
       body += `<p class="meta-note">Showing top ${shown.length} of ${total} matches for <code>${escapeHTML(q)}</code> (scope: <code>${escapeHTML(scope)}</code>).</p>\n`;
@@ -264,7 +189,15 @@ export async function onRequestGet(context) {
     body += `<div class="table-wrap">\n<table>\n<thead>\n<tr><th>Type</th><th>Name</th><th>Version</th><th>Collection</th><th>Description</th></tr>\n</thead>\n<tbody>\n${rows}\n</tbody>\n</table>\n</div>\n`;
   }
 
-  return new Response(renderPage(`Search: ${q}`, body), {
+  const html = renderPage({
+    title: `Search: ${q}`,
+    description: "Zero-JavaScript server-side search results across KryX Linux.",
+    canonical: "/search/",
+    bodyHTML: body,
+    nextPath: reqURL.pathname + reqURL.search,
+  });
+
+  return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "public, max-age=60",

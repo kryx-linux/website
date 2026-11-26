@@ -15,7 +15,9 @@ Concise, practical documentation for installing, running, and packaging software
 2. [`kpm` Package Management](/docs/kpm.html) — Syncing, binary installs, version pinning, holds, downgrades, orphan pruning, ABI checks (`kpm check --broken`), rejected config merges, integrated `ports`, and 100% CRUX symlink parity.
 3. [Building Ports (`Pkgfile` & `kryx-src`)](/docs/building-ports.html) — Writing `Pkgfile` recipes, `# Make depends on:`, local/git Nix-like builds, overlays with `ports`, and `kryx-src` CI staging.
 4. [Packaging `.deb` Archives into a `Pkgfile`](/docs/packaging-deb.html) — Cleanly repackaging Debian/Ubuntu `.deb` binaries with multiarch path normalization, `.nostrip`, Debian→KryX dependency mapping, and ELF auditing.
-5. [System Configuration](/docs/configuration.html) — `/etc/kpm.ini`, `/etc/ports/sources.list`, `/etc/pkgadd.conf`, `signify` key rotation, and Wayland/CLI base setup.
+5. [Init Systems (`rc` & `dinit`)](/docs/init-systems.html) — Default CRUX SysVinit (`rc`) and opt-in `dinit` (`0.23.0`) + `turnstile` + `kryx-init` dual-init setup with `rc-compat` bridge.
+6. [Dependency Graph & `kpm deps`/`why`](/docs/depgraph.html) — Iterative Tarjan SCC + Kahn topological dependency engine, `kpm deps`, `kpm why`, cascade removal, and the [web Dependency Explorer](/deps/).
+7. [System Configuration](/docs/configuration.html) — `/etc/kpm.ini`, `/etc/ports/sources.list`, `/etc/pkgadd.conf`, `signify` key rotation, and Wayland/CLI base setup.
 
 ## Web Manual Pages
 
@@ -37,3 +39,5 @@ For live-ISO installation or SSH terminals without a browser:
 - [/packages.txt](/packages.txt) — Plain-text binary package index
 - [/ports.txt](/ports.txt) — Plain-text ports tree index
 - [/search/](/search/) — Server-side zero-JS search (also supports `?q=<query>&format=txt` for `curl`)
+- [/browse](/browse) — Filterable, paginated package & port browser (0 bytes client JS)
+- [/deps/](/deps/) — Transitive dependency tree & reverse-dependency (`why`) explorer (`?format=txt` & `?format=dot`)

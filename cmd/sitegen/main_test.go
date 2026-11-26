@@ -90,12 +90,15 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 		"docs/kpm.html",
 		"docs/building-ports.html",
 		"docs/packaging-deb.html",
+		"docs/init-systems.html",
+		"docs/depgraph.html",
 		"docs/configuration.html",
 		"packages/index.html",
 		"packages/kpm.html",
 		"packages/wlroots.html",
 		"ports/index.html",
 		"ports/kpm-tools/index.html",
+		"ports/kpm-tools/kpm.html",
 		"man/index.html",
 		"man/kpm.8.html",
 		"man/kpm-index.8.html",
@@ -104,6 +107,10 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 		"news/index.html",
 		"status/index.html",
 		"feed.xml",
+		"sitemap.xml",
+		"robots.txt",
+		"opensearch.xml",
+		"404.html",
 		"install.txt",
 		"SHA256SUMS.txt",
 		"kryx-release.pub",
@@ -111,6 +118,8 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 		"ports.txt",
 		"search-index.json",
 		"search/index.html",
+		"deps-graph.json",
+		"deps/index.html",
 	}
 	for _, rel := range required {
 		p := filepath.Join(outDir, filepath.FromSlash(rel))
@@ -153,8 +162,42 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 	if err := xml.Unmarshal(feedBytes, &parsed); err != nil {
 		t.Fatalf("invalid feed.xml: %v", err)
 	}
-	if len(parsed.Channel.Items) < 2 {
-		t.Fatalf("expected at least 2 RSS items, got %d", len(parsed.Channel.Items))
+	if len(parsed.Channel.Items) < 3 {
+		t.Fatalf("expected at least 3 RSS items, got %d", len(parsed.Channel.Items))
+	}
+
+	// Validate sitemap.xml syntax and coverage.
+	sitemapBytes, err := os.ReadFile(filepath.Join(outDir, "sitemap.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sm sitemapURLSet
+	if err := xml.Unmarshal(sitemapBytes, &sm); err != nil {
+		t.Fatalf("invalid sitemap.xml: %v", err)
+	}
+	if len(sm.URLs) < 20 {
+		t.Fatalf("expected >= 20 sitemap URLs, got %d", len(sm.URLs))
+	}
+	if !strings.Contains(string(sitemapBytes), "https://kryx.anrix.org/docs/init-systems.html") {
+		t.Fatalf("expected init-systems doc in sitemap.xml")
+	}
+
+	// Verify Void-style Handbook sidebar & pager on new guide.
+	initDocHTML, err := os.ReadFile(filepath.Join(outDir, "docs", "init-systems.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(initDocHTML), `class="docs-sidebar"`) || !strings.Contains(string(initDocHTML), `class="docs-pager"`) {
+		t.Fatalf("expected Void-style docs-sidebar and docs-pager in docs/init-systems.html")
+	}
+
+	// Verify zero heavy bold (font-weight: 700) in style.css.
+	cssBytes, err := os.ReadFile(filepath.Join(outDir, "style.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(cssBytes), "font-weight: 700") {
+		t.Fatalf("forbidden font-weight: 700 found in style.css")
 	}
 
 	// Verify strictly 8 top-level navigation items on index.html.
@@ -237,6 +280,138 @@ func TestBuildSiteEndToEndAndZeroJS(t *testing.T) {
 	handler.ServeHTTP(recEmpty, reqEmpty)
 	if recEmpty.Code != http.StatusOK || !strings.Contains(recEmpty.Body.String(), "Example Queries") {
 		t.Fatalf("expected static search page on empty query, got status=%d", recEmpty.Code)
+	}
+
+	// 5. Dependency Explorer (/deps) HTML, reverse-deps (why), plain-text, Graphviz DOT, and XSS
+	recDep := httptest.NewRecorder()
+	handler.ServeHTTP(recDep, httptest.NewRequest(http.MethodGet, "/deps?pkg=wlroots", nil))
+	if recDep.Code != http.StatusOK || !strings.Contains(recDep.Body.String(), "Dependency Tree:") || strings.Contains(strings.ToLower(recDep.Body.String()), "<script") {
+		t.Fatalf("unexpected /deps?pkg=wlroots response: code=%d", recDep.Code)
+	}
+	recDepTxt := httptest.NewRecorder()
+	handler.ServeHTTP(recDepTxt, httptest.NewRequest(http.MethodGet, "/deps?pkg=wlroots&format=txt", nil))
+	if recDepTxt.Code != http.StatusOK || !strings.HasPrefix(recDepTxt.Header().Get("Content-Type"), "text/plain") || !strings.Contains(recDepTxt.Body.String(), "# Dependency tree for wlroots") {
+		t.Fatalf("unexpected /deps txt response: code=%d body=%s", recDepTxt.Code, recDepTxt.Body.String())
+	}
+	recDepDot := httptest.NewRecorder()
+	handler.ServeHTTP(recDepDot, httptest.NewRequest(http.MethodGet, "/deps?pkg=wlroots&format=dot", nil))
+	if recDepDot.Code != http.StatusOK || !strings.Contains(recDepDot.Body.String(), "digraph kryx_deps") {
+		t.Fatalf("unexpected /deps dot response: code=%d body=%s", recDepDot.Code, recDepDot.Body.String())
+	}
+	recWhy := httptest.NewRecorder()
+	handler.ServeHTTP(recWhy, httptest.NewRequest(http.MethodGet, "/deps?pkg=wayland&mode=why", nil))
+	if recWhy.Code != http.StatusOK || !strings.Contains(recWhy.Body.String(), "Required By:") || !strings.Contains(recWhy.Body.String(), "wlroots") {
+		t.Fatalf("unexpected /deps why response: code=%d body=%s", recWhy.Code, recWhy.Body.String())
+	}
+	recDepXSS := httptest.NewRecorder()
+	handler.ServeHTTP(recDepXSS, httptest.NewRequest(http.MethodGet, "/deps?pkg=%3Cscript%3Ealert(1)%3C/script%3E", nil))
+	if strings.Contains(strings.ToLower(recDepXSS.Body.String()), "<script") {
+		t.Fatalf("unescaped <script> leaked into /deps HTML")
+	}
+
+	// 6. Filterable package/port browser (/browse)
+	recBrowse := httptest.NewRecorder()
+	handler.ServeHTTP(recBrowse, httptest.NewRequest(http.MethodGet, "/browse?kind=prebuilt&per=10&page=1", nil))
+	if recBrowse.Code != http.StatusOK || !strings.Contains(recBrowse.Body.String(), "/packages/wlroots.html") {
+		t.Fatalf("unexpected /browse HTML response: code=%d", recBrowse.Code)
+	}
+	recBrowseTxt := httptest.NewRecorder()
+	handler.ServeHTTP(recBrowseTxt, httptest.NewRequest(http.MethodGet, "/browse?col=kpm-tools&format=txt", nil))
+	if recBrowseTxt.Code != http.StatusOK || !strings.Contains(recBrowseTxt.Body.String(), "/packages/kpm.html") {
+		t.Fatalf("unexpected /browse txt response: code=%d body=%s", recBrowseTxt.Code, recBrowseTxt.Body.String())
+	}
+
+	// 7. Zero-JS theme switcher (/theme + cookie middleware + open-redirect guard)
+	recTheme := httptest.NewRecorder()
+	handler.ServeHTTP(recTheme, httptest.NewRequest(http.MethodGet, "/theme?mode=dark&next=/docs/", nil))
+	if recTheme.Code != http.StatusFound || recTheme.Header().Get("Location") != "/docs/" {
+		t.Fatalf("expected 302 redirect to /docs/, got code=%d loc=%q", recTheme.Code, recTheme.Header().Get("Location"))
+	}
+	if !strings.Contains(recTheme.Header().Get("Set-Cookie"), "kryx_theme=dark") {
+		t.Fatalf("expected kryx_theme=dark cookie, got %q", recTheme.Header().Get("Set-Cookie"))
+	}
+	recRedirectGuard := httptest.NewRecorder()
+	handler.ServeHTTP(recRedirectGuard, httptest.NewRequest(http.MethodGet, "/theme?mode=dark&next=//evil.example/pwn", nil))
+	if recRedirectGuard.Header().Get("Location") != "/" {
+		t.Fatalf("open redirect was not blocked: got %q", recRedirectGuard.Header().Get("Location"))
+	}
+	recDarkHome := httptest.NewRecorder()
+	reqDarkHome := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqDarkHome.AddCookie(&http.Cookie{Name: "kryx_theme", Value: "dark"})
+	handler.ServeHTTP(recDarkHome, reqDarkHome)
+	if !strings.Contains(recDarkHome.Body.String(), `<html lang="en" data-theme="dark">`) {
+		t.Fatalf("expected data-theme=\"dark\" injected into HTML response")
+	}
+	if !strings.Contains(recDarkHome.Header().Get("Vary"), "Cookie") {
+		t.Fatalf("expected Vary: Cookie header when theme cookie active")
+	}
+}
+
+func TestLoadReleaseInfoLiveSync(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fallbackPath := filepath.Join(repoRoot, "data", "release.json")
+
+	const mockHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	var ts *httptest.Server
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/releases/latest":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"tag_name": "2026.12-rolling",
+				"published_at": "2026-12-01T08:00:00Z",
+				"assets": [
+					{
+						"name": "kryx-linux-x86_64.iso",
+						"size": 452984832,
+						"browser_download_url": "https://example.invalid/kryx-linux-x86_64.iso"
+					},
+					{
+						"name": "SHA256SUMS.txt",
+						"size": 128,
+						"browser_download_url": "` + ts.URL + `/SHA256SUMS.txt"
+					}
+				]
+			}`))
+		case "/SHA256SUMS.txt":
+			_, _ = w.Write([]byte(mockHash + "  kryx-linux-x86_64.iso\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	// Offline skips HTTP fetch.
+	relOff, _, err := LoadReleaseInfo(fallbackPath, ts.URL+"/releases/latest", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relOff.Version == "2026.12-rolling" {
+		t.Fatalf("offline mode should not fetch mock release")
+	}
+
+	// Online updates version, date, size, URL, and SHA-256 checksum.
+	relLive, src, err := LoadReleaseInfo(fallbackPath, ts.URL+"/releases/latest", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relLive.Version != "2026.12-rolling" || relLive.ReleaseDate != "2026-12-01" {
+		t.Fatalf("unexpected live release metadata: %+v (src=%s)", relLive, src)
+	}
+	foundISO := false
+	for _, a := range relLive.Artifacts {
+		if a.Name == "kryx-linux-x86_64.iso" {
+			foundISO = true
+			if a.SHA256 != mockHash || a.URL != "https://example.invalid/kryx-linux-x86_64.iso" || !strings.Contains(a.Size, "MiB") {
+				t.Fatalf("unexpected synced ISO artifact: %+v", a)
+			}
+		}
+	}
+	if !foundISO {
+		t.Fatalf("expected kryx-linux-x86_64.iso artifact in synced release")
 	}
 }
 

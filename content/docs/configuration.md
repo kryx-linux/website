@@ -1,7 +1,7 @@
 ---
 title: System Configuration
 description: Reference for /etc/kpm.ini, /etc/ports/sources.list, /etc/pkgadd.conf, signify signing keys, and multi-repository overlays.
-order: 5
+order: 7
 toc: true
 ---
 

@@ -381,21 +381,43 @@ func splitDepList(raw string) []string {
 	return out
 }
 
-// GeneratePortsPages emits /ports/index.html, /ports/<col>/index.html, and recipe pages for KryX first-party ports.
+// GeneratePortsPages emits /ports/index.html, /ports/<col>/index.html, and detail pages for all discovered ports.
 func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]PortRecipe, idx RepoIndex) error {
 	portsOutDir := filepath.Join(outDir, "ports")
 	if err := os.MkdirAll(portsOutDir, 0o755); err != nil {
 		return err
 	}
 
+	// Build cross-tree port lookup and reverse dependency index across all collections.
+	portLookup := make(map[string]PortRecipe)
+	revDeps := make(map[string][]string)
 	totalPorts := 0
 	for _, col := range portCollectionsOrder {
 		totalPorts += len(byCol[col])
+		for _, p := range byCol[col] {
+			if _, exists := portLookup[p.Name]; !exists {
+				portLookup[p.Name] = p
+			}
+		}
+	}
+	for _, col := range portCollectionsOrder {
+		for _, p := range byCol[col] {
+			seenDep := make(map[string]bool)
+			for _, dep := range p.Depends {
+				if dep != "" && dep != p.Name && !seenDep[dep] {
+					seenDep[dep] = true
+					revDeps[dep] = append(revDeps[dep], p.Name)
+				}
+			}
+		}
+	}
+	for k := range revDeps {
+		sort.Strings(revDeps[k])
 	}
 
 	var indexBody strings.Builder
 	indexBody.WriteString("<h1>Ports Tree</h1>\n")
-	fmt.Fprintf(&indexBody, "<p class=\"meta-note\">%d port recipe(s) across KryX &amp; CRUX collections. Plain-text index: <a href=\"/ports.txt\">/ports.txt</a>.</p>\n", totalPorts)
+	fmt.Fprintf(&indexBody, "<p class=\"meta-note\">%d port recipe(s) across KryX &amp; CRUX collections. Plain-text index: <a href=\"/ports.txt\">/ports.txt</a> &middot; <a href=\"/browse\">Filter &amp; paginate</a> &middot; <a href=\"/deps/\">Dependency explorer</a>.</p>\n", totalPorts)
 	indexBody.WriteString("<p>Sync all local collections natively with <code>ports -u</code> (pure-Go <code>git</code>/<code>rsync</code>/<code>httpup</code> integrated into <code>kpm</code>) and build any port from source with <code>kpm build --deps --sync &lt;port&gt;</code>.</p>\n")
 	indexBody.WriteString(renderSearchForm("", "ports", "Search ports across all collections..."))
 
@@ -419,7 +441,7 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 		return err
 	}
 
-	// Per-collection pages (/ports/<col>/index.html)
+	// Per-collection pages (/ports/<col>/index.html) and per-port detail pages (/ports/<col>/<dir>.html)
 	for _, col := range portCollectionsOrder {
 		colDir := filepath.Join(portsOutDir, col)
 		if err := os.MkdirAll(colDir, 0o755); err != nil {
@@ -432,7 +454,8 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 		}
 
 		var body strings.Builder
-		body.WriteString("<p class=\"meta-note\"><a href=\"/ports/\">&larr; All collections</a></p>\n")
+		fmt.Fprintf(&body, "<p class=\"meta-note\"><a href=\"/ports/\">&larr; All collections</a> &middot; <a href=\"/browse?col=%s\">Filter &amp; paginate %s</a></p>\n",
+			html.EscapeString(col), html.EscapeString(col))
 		fmt.Fprintf(&body, "<h1>Ports: <code>%s</code></h1>\n", html.EscapeString(col))
 		fmt.Fprintf(&body, "<p>%s (%d port(s)).</p>\n", html.EscapeString(collectionDescriptions[col]), len(list))
 		body.WriteString(renderSearchForm("", "ports", "Search ports..."))
@@ -451,15 +474,8 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 					lastBucket = bucket
 				}
 				_, hasBin := idx.Packages[p.Name]
-				isFirstParty := col == "kpm-tools" || col == "kernel" || col == "system"
-				portLink := ""
-				if hasBin {
-					portLink = fmt.Sprintf("<a href=\"/packages/%s.html\">%s</a>", html.EscapeString(p.Name), html.EscapeString(p.Name))
-				} else if isFirstParty && p.RawPkgfile != "" {
-					portLink = fmt.Sprintf("<a href=\"/ports/%s/%s.html\">%s</a>", html.EscapeString(col), html.EscapeString(p.DirName), html.EscapeString(p.Name))
-				} else {
-					portLink = html.EscapeString(p.Name)
-				}
+				portURL := fmt.Sprintf("/ports/%s/%s.html", col, p.DirName)
+				portLink := fmt.Sprintf("<a href=\"%s\">%s</a>", html.EscapeString(portURL), html.EscapeString(p.Name))
 				binStatus := "source"
 				if hasBin {
 					binStatus = fmt.Sprintf("<a href=\"/packages/%s.html\">prebuilt</a>", html.EscapeString(p.Name))
@@ -472,11 +488,8 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 					html.EscapeString(p.Description),
 				)
 
-				// Emit recipe page for first-party KryX ports even if not yet in index.json.
-				if isFirstParty && p.RawPkgfile != "" {
-					if err := emitPortDetailPage(filepath.Join(colDir, p.DirName+".html"), site, p, idx); err != nil {
-						return err
-					}
+				if err := emitPortDetailPage(filepath.Join(colDir, p.DirName+".html"), site, p, idx, portLookup, revDeps[p.Name]); err != nil {
+					return err
 				}
 			}
 			body.WriteString("</tbody>\n</table>\n</div>\n")
@@ -494,18 +507,78 @@ func GeneratePortsPages(outDir string, site SiteContext, byCol map[string][]Port
 	return nil
 }
 
-func emitPortDetailPage(dst string, site SiteContext, p PortRecipe, idx RepoIndex) error {
+func portGitHubURL(p PortRecipe) string {
+	switch p.Collection {
+	case "kpm-tools", "kernel", "system":
+		return fmt.Sprintf("https://github.com/kryx-linux/ports/blob/main/%s/%s/Pkgfile", p.Collection, p.DirName)
+	default:
+		return fmt.Sprintf("https://github.com/kryx-linux/%s/tree/main/%s", p.Collection, p.DirName)
+	}
+}
+
+func renderPortDepChips(deps []string, indexed map[string]RepoPackage, portLookup map[string]PortRecipe) string {
+	if len(deps) == 0 {
+		return "<p class=\"meta-note\">None</p>\n"
+	}
+	var sb strings.Builder
+	sb.WriteString("<ul class=\"dep-list\">\n")
+	for _, d := range deps {
+		if _, ok := indexed[d]; ok {
+			fmt.Fprintf(&sb, "<li><a href=\"/packages/%s.html\">%s</a></li>\n", html.EscapeString(d), html.EscapeString(d))
+		} else if pr, ok := portLookup[d]; ok {
+			fmt.Fprintf(&sb, "<li><a href=\"/ports/%s/%s.html\">%s</a></li>\n", html.EscapeString(pr.Collection), html.EscapeString(pr.DirName), html.EscapeString(d))
+		} else {
+			fmt.Fprintf(&sb, "<li><span>%s</span></li>\n", html.EscapeString(d))
+		}
+	}
+	sb.WriteString("</ul>\n")
+	return sb.String()
+}
+
+func emitPortDetailPage(dst string, site SiteContext, p PortRecipe, idx RepoIndex, portLookup map[string]PortRecipe, requiredBy []string) error {
+	_, hasBin := idx.Packages[p.Name]
 	var body strings.Builder
-	fmt.Fprintf(&body, "<p class=\"meta-note\"><a href=\"/ports/%s/\">&larr; %s collection</a></p>\n",
+	fmt.Fprintf(&body, "<p class=\"meta-note\"><a href=\"/ports/%s/\">&larr; %s collection</a> &middot; <a href=\"/ports/\">All collections</a></p>\n",
 		html.EscapeString(p.Collection), html.EscapeString(p.Collection))
-	fmt.Fprintf(&body, "<h1>%s <code>%s</code></h1>\n", html.EscapeString(p.Name), html.EscapeString(p.FullVersion()))
+	fmt.Fprintf(&body, "<h1>%s <code>%s</code></h1>\n", html.EscapeString(p.Name), html.EscapeString(defaultStr(p.FullVersion(), "—")))
 	if p.Description != "" {
 		fmt.Fprintf(&body, "<p>%s</p>\n", html.EscapeString(p.Description))
 	}
+
+	if hasBin {
+		body.WriteString("<h2>Install Prebuilt Binary</h2>\n")
+		fmt.Fprintf(&body, "<pre><code>kpm install --deps %s</code></pre>\n", html.EscapeString(p.Name))
+	}
 	fmt.Fprintf(&body, "<h2>Build from Source</h2>\n<pre><code>kpm build --deps --sync --install %s</code></pre>\n", html.EscapeString(p.RelPath))
-	body.WriteString("<h2>Runtime Dependencies</h2>\n" + renderDepChips(p.Depends, idx.Packages))
-	body.WriteString("<h2>Make Dependencies</h2>\n" + renderDepChips(p.MakeDepends, idx.Packages))
-	fmt.Fprintf(&body, "<h2>Pkgfile</h2>\n<pre><code>%s</code></pre>\n", html.EscapeString(p.RawPkgfile))
+
+	body.WriteString("<h2>Metadata</h2>\n<div class=\"table-wrap\">\n<table>\n<tbody>\n")
+	fmt.Fprintf(&body, "<tr><th>Port</th><td><code>%s</code></td></tr>\n", html.EscapeString(p.RelPath))
+	fmt.Fprintf(&body, "<tr><th>Version</th><td><code>%s</code></td></tr>\n", html.EscapeString(defaultStr(p.FullVersion(), "—")))
+	fmt.Fprintf(&body, "<tr><th>Collection</th><td><a href=\"/ports/%s/\">%s</a></td></tr>\n", html.EscapeString(p.Collection), html.EscapeString(p.Collection))
+	if hasBin {
+		fmt.Fprintf(&body, "<tr><th>Binary Status</th><td><span class=\"badge-ok\">prebuilt</span> (<a href=\"/packages/%s.html\">view binary package</a>)</td></tr>\n", html.EscapeString(p.Name))
+	} else {
+		body.WriteString("<tr><th>Binary Status</th><td>source-only (build via <code>kpm build</code>)</td></tr>\n")
+	}
+	if p.Maintainer != "" {
+		fmt.Fprintf(&body, "<tr><th>Maintainer</th><td>%s</td></tr>\n", html.EscapeString(p.Maintainer))
+	}
+	if p.URL != "" {
+		fmt.Fprintf(&body, "<tr><th>Upstream URL</th><td><a href=\"%s\">%s</a></td></tr>\n", html.EscapeString(p.URL), html.EscapeString(p.URL))
+	}
+	ghURL := portGitHubURL(p)
+	fmt.Fprintf(&body, "<tr><th>GitHub Recipe</th><td><a href=\"%s\">%s</a></td></tr>\n", html.EscapeString(ghURL), html.EscapeString(ghURL))
+	fmt.Fprintf(&body, "<tr><th>Dependency Graph</th><td><a href=\"/deps?pkg=%s\">Dependency tree</a> &middot; <a href=\"/deps?pkg=%s&amp;mode=why\">Required By (why)</a> &middot; <a href=\"/deps?pkg=%s&amp;format=dot\">DOT</a></td></tr>\n",
+		html.EscapeString(p.Name), html.EscapeString(p.Name), html.EscapeString(p.Name))
+	body.WriteString("</tbody>\n</table>\n</div>\n")
+
+	body.WriteString("<h2>Runtime Dependencies</h2>\n" + renderPortDepChips(p.Depends, idx.Packages, portLookup))
+	body.WriteString("<h2>Make Dependencies</h2>\n" + renderPortDepChips(p.MakeDepends, idx.Packages, portLookup))
+	body.WriteString("<h2>Required By</h2>\n" + renderPortDepChips(requiredBy, idx.Packages, portLookup))
+
+	if strings.TrimSpace(p.RawPkgfile) != "" {
+		fmt.Fprintf(&body, "<h2>Pkgfile</h2>\n<pre><code>%s</code></pre>\n", html.EscapeString(p.RawPkgfile))
+	}
 
 	return writeHTMLPage(dst, site, PageMeta{
 		Title:       fmt.Sprintf("%s — %s Port", p.Name, p.Collection),

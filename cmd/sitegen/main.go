@@ -21,17 +21,18 @@ const defaultIndexURL = "https://github.com/kryx-linux/ports/releases/download/r
 
 // BuildOptions controls a site generation run.
 type BuildOptions struct {
-	OutDir     string
-	SiteURL    string
-	ContentDir string
-	StaticDir  string
-	DataDir    string
-	IndexURL   string
-	IndexFile  string
-	PortsDir   string
-	ManDirs    []string
-	Offline    bool
-	BuildTime  time.Time
+	OutDir        string
+	SiteURL       string
+	ContentDir    string
+	StaticDir     string
+	DataDir       string
+	IndexURL      string
+	IndexFile     string
+	ReleaseAPIURL string
+	PortsDir      string
+	ManDirs       []string
+	Offline       bool
+	BuildTime     time.Time
 }
 
 func main() {
@@ -42,9 +43,10 @@ func main() {
 	dataDir := flag.String("data", "data", "data directory (release.json, index.fixture.json, man/)")
 	indexURL := flag.String("index-url", defaultIndexURL, "live index.json URL for /packages/")
 	indexFile := flag.String("index-file", "", "explicit local index.json path (overrides -index-url)")
+	releaseAPIURL := flag.String("release-api-url", defaultReleaseAPIURL, "GitHub Release API URL for live ISO/RootFS metadata")
 	portsDir := flag.String("ports-dir", "", "local CRUX/KryX ports tree directory (auto-detects ../ports if present)")
 	manDirsCSV := flag.String("man-dirs", "", "comma-separated directories containing roff man pages")
-	offline := flag.Bool("offline", false, "skip live HTTP fetch of index.json and use local fixture")
+	offline := flag.Bool("offline", false, "skip live HTTP fetch of index.json/releases and use local fixtures")
 	serveAddr := flag.String("serve", "", "optional HTTP listen address to serve -out (e.g. :8080)")
 	flag.Parse()
 
@@ -54,7 +56,7 @@ func main() {
 		if strings.HasPrefix(display, ":") {
 			display = "127.0.0.1" + display
 		}
-		fmt.Printf("Serving %s on http://%s (with zero-JS /search handler)\n", *outDir, display)
+		fmt.Printf("Serving %s on http://%s (zero-JS /search, /browse, /deps, /theme)\n", *outDir, display)
 		handler := NewSiteHandler(*outDir, SiteContext{
 			SiteURL:   strings.TrimRight(*siteURL, "/"),
 			BuildTime: time.Now().UTC(),
@@ -81,17 +83,18 @@ func main() {
 	}
 
 	opts := BuildOptions{
-		OutDir:     *outDir,
-		SiteURL:    *siteURL,
-		ContentDir: *contentDir,
-		StaticDir:  *staticDir,
-		DataDir:    *dataDir,
-		IndexURL:   *indexURL,
-		IndexFile:  *indexFile,
-		PortsDir:   resolvedPorts,
-		ManDirs:    manDirs,
-		Offline:    *offline,
-		BuildTime:  time.Now().UTC(),
+		OutDir:        *outDir,
+		SiteURL:       *siteURL,
+		ContentDir:    *contentDir,
+		StaticDir:     *staticDir,
+		DataDir:       *dataDir,
+		IndexURL:      *indexURL,
+		IndexFile:     *indexFile,
+		ReleaseAPIURL: *releaseAPIURL,
+		PortsDir:      resolvedPorts,
+		ManDirs:       manDirs,
+		Offline:       *offline,
+		BuildTime:     time.Now().UTC(),
 	}
 
 	if err := BuildSite(opts); err != nil {
@@ -123,8 +126,12 @@ func BuildSite(opts BuildOptions) error {
 		return fmt.Errorf("copy static assets: %w", err)
 	}
 
-	// 2. Load release metadata and binary repository index.json.
-	rel, err := loadReleaseInfo(filepath.Join(opts.DataDir, "release.json"))
+	// 2. Load release metadata (live GitHub Release sync when online) and binary index.json.
+	relAPI := opts.ReleaseAPIURL
+	if relAPI == "" {
+		relAPI = defaultReleaseAPIURL
+	}
+	rel, relSource, err := LoadReleaseInfo(filepath.Join(opts.DataDir, "release.json"), relAPI, opts.Offline)
 	if err != nil {
 		return err
 	}
@@ -195,8 +202,10 @@ func BuildSite(opts BuildOptions) error {
 		return err
 	}
 
-	// 11. Emit terminal-friendly plain-text endpoints (/install.txt, /SHA256SUMS.txt)
-	// and zero-JS search index + /search/ + /ports.txt.
+	// 11. Emit terminal-friendly plain-text endpoints (/install.txt, /SHA256SUMS.txt),
+	// zero-JS search index (/search-index.json, /search/, /ports.txt),
+	// dependency graph (/deps-graph.json, /deps/), and discovery assets
+	// (sitemap.xml, robots.txt, opensearch.xml, 404.html).
 	if err := generatePlainTextEndpoints(opts.OutDir, site, rel); err != nil {
 		return err
 	}
@@ -204,9 +213,57 @@ func BuildSite(opts BuildOptions) error {
 	if err := GenerateSearchAssets(opts.OutDir, site, searchEntries, portsByCol); err != nil {
 		return err
 	}
+	depsGraph := BuildDepsGraph(idx, portsByCol)
+	if err := GenerateDepsAssets(opts.OutDir, site, depsGraph); err != nil {
+		return err
+	}
 
-	fmt.Printf("Built KryX Linux static site -> %s (%d packages, %d search entries, %d man pages, %d news posts)\n",
-		opts.OutDir, len(idx.Packages), len(searchEntries), len(manPages), len(newsPosts))
+	sitemapPaths := []string{
+		"/",
+		"/download/",
+		"/docs/",
+		"/packages/",
+		"/ports/",
+		"/man/",
+		"/news/",
+		"/status/",
+		"/search/",
+		"/deps/",
+		"/browse",
+	}
+	for _, d := range docRecords {
+		sitemapPaths = append(sitemapPaths, d.URL)
+	}
+	for _, mp := range manPages {
+		sitemapPaths = append(sitemapPaths, "/man/"+mp.Filename+".html")
+	}
+	for _, np := range newsPosts {
+		sitemapPaths = append(sitemapPaths, "/news/"+np.Slug+".html")
+	}
+	for name := range idx.Packages {
+		sitemapPaths = append(sitemapPaths, "/packages/"+name+".html")
+	}
+	for _, col := range portCollectionsOrder {
+		sitemapPaths = append(sitemapPaths, "/ports/"+col+"/")
+		for _, p := range portsByCol[col] {
+			sitemapPaths = append(sitemapPaths, fmt.Sprintf("/ports/%s/%s.html", col, p.DirName))
+		}
+	}
+	if err := GenerateSitemap(opts.OutDir, site.SiteURL, sitemapPaths, opts.BuildTime); err != nil {
+		return err
+	}
+	if err := GenerateRobotsTxt(opts.OutDir, site.SiteURL); err != nil {
+		return err
+	}
+	if err := GenerateOpenSearch(opts.OutDir, site.SiteURL); err != nil {
+		return err
+	}
+	if err := Generate404Page(opts.OutDir, site); err != nil {
+		return err
+	}
+
+	fmt.Printf("Built KryX Linux static site -> %s (%d packages, %d dep nodes, %d search entries, %d man pages, %d news posts; release=%s)\n",
+		opts.OutDir, len(idx.Packages), len(depsGraph), len(searchEntries), len(manPages), len(newsPosts), relSource)
 	return nil
 }
 
@@ -293,6 +350,11 @@ func buildDocsSection(srcDir, outDir string, site SiteContext) ([]DocRecord, err
 		})
 	}
 
+	guidePos := make(map[string]int, len(guides))
+	for i, g := range guides {
+		guidePos[g.slug] = i
+	}
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
@@ -317,7 +379,48 @@ func buildDocsSection(srcDir, outDir string, site SiteContext) ([]DocRecord, err
 				body = body + searchBox
 			}
 		} else {
-			body = "<p class=\"meta-note\"><a href=\"/docs/\">&larr; Handbook Index</a></p>\n" + body
+			var layout strings.Builder
+			layout.WriteString("<div class=\"docs-layout\">\n")
+			layout.WriteString("  <aside class=\"docs-sidebar\" aria-label=\"Handbook chapters\">\n")
+			layout.WriteString("    <p class=\"docs-sidebar-title\"><a href=\"/docs/\">Handbook</a></p>\n")
+			layout.WriteString("    <ol>\n")
+			for _, g := range guides {
+				cur := ""
+				if g.slug == slug {
+					cur = ` aria-current="page"`
+				}
+				fmt.Fprintf(&layout, "      <li><a href=\"/docs/%s.html\"%s>%s</a></li>\n",
+					html.EscapeString(g.slug), cur, html.EscapeString(g.title))
+			}
+			layout.WriteString("    </ol>\n")
+			layout.WriteString("    <p class=\"docs-sidebar-meta\"><a href=\"/man/\">Man Pages</a> &middot; <a href=\"/search?scope=docs\">Search Docs</a></p>\n")
+			layout.WriteString("  </aside>\n")
+			layout.WriteString("  <div class=\"docs-content\">\n")
+			layout.WriteString("    <p class=\"meta-note\"><a href=\"/docs/\">&larr; Handbook Index</a></p>\n")
+			layout.WriteString(body)
+
+			if pos, ok := guidePos[slug]; ok {
+				layout.WriteString("\n    <nav class=\"docs-pager\" aria-label=\"Chapter navigation\">\n")
+				if pos > 0 {
+					prev := guides[pos-1]
+					fmt.Fprintf(&layout, "      <a class=\"docs-prev\" href=\"/docs/%s.html\">&larr; %s</a>\n",
+						html.EscapeString(prev.slug), html.EscapeString(prev.title))
+				} else {
+					layout.WriteString("      <a class=\"docs-prev\" href=\"/docs/\">&larr; Handbook Index</a>\n")
+				}
+				if pos+1 < len(guides) {
+					next := guides[pos+1]
+					fmt.Fprintf(&layout, "      <a class=\"docs-next\" href=\"/docs/%s.html\">%s &rarr;</a>\n",
+						html.EscapeString(next.slug), html.EscapeString(next.title))
+				} else {
+					layout.WriteString("      <a class=\"docs-next\" href=\"/man/\">Web Man Pages &rarr;</a>\n")
+				}
+				layout.WriteString("    </nav>\n")
+			}
+
+			layout.WriteString("  </div>\n")
+			layout.WriteString("</div>\n")
+			body = layout.String()
 		}
 
 		if err := writeHTMLPage(dst, site, PageMeta{
